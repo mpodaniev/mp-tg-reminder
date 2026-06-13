@@ -17,7 +17,7 @@ The Owner forwards messages throughout the day from multiple Telegram chats — 
 
 The trigger is personal friction: important messages are regularly missed because the Owner has no mechanism to defer attention. The project is greenfield. The Owner is both the sole user and the builder, so delivery speed and personal fit outweigh multi-user extensibility.
 
-The chosen approach is a personal Telegram bot that accepts forwarded messages, asks the Owner when to be reminded (via quick-picks or a custom time), stores the reminder durably, and fires it back at the scheduled time with one-tap inline actions. Resolved reminders (done or deleted) are removed from the bot chat entirely, so an empty chat equals a fully cleared inbox — the Owner can glance at the bot to confirm nothing is pending.
+The chosen approach is a personal Telegram bot that accepts forwarded messages, asks the Owner when to be reminded (via quick-picks or a custom time), stores the reminder durably, and fires it back at the scheduled time with one-tap inline actions. Resolved reminders (done or deleted) have their fired-reminder message removed from the bot chat entirely, so a chat with no active fired-reminder messages equals a fully cleared inbox — the Owner can glance at the bot to confirm nothing is pending. The invariant covers fired-reminder messages only; transient confirmation messages (e.g. "Reminder set for…") are not part of it.
 
 Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate analysis (2026-06-13) identified the following as highest-risk production vectors: silent data loss on service restart; chat-flood degrading the list-as-chat model (mitigated by the message-deletion-on-resolve decision); and private-chat deep-link failures (mitigated by a graceful fallback in AC-11).
 
@@ -113,20 +113,20 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 ### AC-05 (US-05) — happy path
 
 **Given** the Owner receives a fired reminder with action buttons
-**When** the Owner taps Snooze and selects a new time (via quick-pick or custom input)
+**When** the Owner taps Snooze and selects a new time — only quick-picks whose wall-clock time is still in the future are offered (picks whose time has already passed today are hidden) — or enters a custom time
 **Then** the bot confirms the new scheduled time, the reminder returns to pending state with the updated time, and the fired-reminder message is updated to reflect the rescheduled state
 
 ### AC-06 (US-06) — happy path
 
 **Given** the Owner receives a fired reminder with action buttons
 **When** the Owner taps Done
-**Then** the bot deletes the fired-reminder message from the chat, confirming the reminder is resolved
+**Then** the bot deletes the fired-reminder message from the chat, confirming the reminder is resolved; if Telegram rejects the deletion because the message exceeds its delete window, the bot instead edits the message to an empty/resolved placeholder so the cleared-inbox invariant still holds visually
 
 ### AC-07 (US-07) — happy path
 
 **Given** the Owner receives a fired reminder with action buttons
 **When** the Owner taps Delete
-**Then** the bot removes the fired-reminder message from the chat without marking it done
+**Then** the bot removes the fired-reminder message from the chat without marking it done; if deletion is rejected because the message exceeds Telegram's delete window, the bot edits it to an empty/removed placeholder instead
 
 ### AC-08 (US-03) — error
 
@@ -138,7 +138,7 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 
 **Given** a Telegram user other than the Owner sends any message to the bot
 **When** the bot receives the message
-**Then** the bot does not create a reminder, does not store any data, and either ignores the message silently or informs the sender that this is a private bot
+**Then** the bot does not create a reminder, does not store any data, and silently ignores the message — it sends no reply, so that replying to non-Owner messages cannot itself become a flood/abuse vector
 
 ### AC-10 (US-05) — domain invariant
 
@@ -149,7 +149,7 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 ### AC-11 (US-08) — cross-context
 
 **Given** the Owner taps "Go to source" on a fired reminder
-**When** the source message originated from a private chat, DM, or a group the Owner may no longer be a member of (making a navigable deep link unavailable)
+**When** the source lacks a public chat username together with a message identifier (private chat, DM, or a group the Owner may no longer be a member of), so no navigable deep link can be built — the bot offers the link only when both a public username and message id are present, and otherwise treats the link as unavailable
 **Then** the bot informs the Owner that a direct link is not available for this source and displays the captured message content inline instead
 
 ### AC-12 (US-04) — cross-context
@@ -157,6 +157,12 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 **Given** a pending reminder is due to fire and the original source message contained media from a protected-content chat
 **When** the bot attempts to send the reminder
 **Then** the bot fires the reminder with the available text content, attaches a note that the media could not be restored due to source restrictions, and still presents all action buttons
+
+### AC-13 (US-01) — setup gate
+
+**Given** the Owner forwards a message but has not yet configured a home timezone
+**When** the bot receives the forwarded message
+**Then** the bot does not show the quick-pick prompt and instead asks the Owner to set a timezone via `/settings` first, resuming the capture flow for that message once the timezone is configured
 
 ## 6. Non-functional requirements
 
@@ -176,7 +182,7 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 - **Abuse cases:**
   - *Unauthorized access*: Any Telegram user who discovers the bot link sends messages → bot rejects all non-Owner requests without storing data.
   - *Data leak*: Stored message content must be accessible only to the Owner's Telegram session; no external API or admin interface exposes it.
-  - *Replay / duplicate fire*: A reminder fires more than once due to a scheduler bug → each reminder may only be delivered once per scheduled time; duplicate deliveries are suppressed before sending.
+  - *Replay / duplicate fire*: Delivery is at-least-once — a reminder whose send was not confirmed (e.g. the service crashed mid-fire, before delivery was acknowledged) is re-fired after restart so that no reminder is silently lost (§2); only confirmed deliveries are suppressed, so a true duplicate of an already-delivered reminder is never sent.
 - **Security review:** N/A — single-user personal tool, no multi-tenant boundary, no external authentication surface beyond Telegram's own user identity.
 
 ## 7. Metrics / KPIs
@@ -188,7 +194,7 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 
 ## 8. Open questions
 
-- [ ] What is the Owner's home timezone, and how is it configured? Default now: timezone set via `/settings` command during onboarding; required before first reminder can be created. — owner: Mykhailo Podaniev, due: before sdd:design
+- [ ] What input grammar does "Custom time" accept (natural-language relative phrases, structured `DD.MM.YYYY HH:MM`, or both), and how are partial inputs filled? Default now: accept both — relative ("за 2 год", "завтра 15:00") and structured; date-only → defaults to 09:00; time-only → next future occurrence. — owner: Mykhailo Podaniev, due: before sdd:design
 - [ ] Should the bot send a reminder even if it cannot recover the original media (e.g. expired file reference)? Default now: yes — fire with text only and a note (per AC-12). — owner: Mykhailo Podaniev, due: before sdd:tasks
 - [ ] What happens if the Owner never responds to a "When to remind?" prompt (bot is waiting, Owner ignores it)? Default now: prompt expires after 24 hours and the forwarded message is discarded with a bot notification. — owner: Mykhailo Podaniev, due: before sdd:design
 
@@ -207,3 +213,11 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 | 7 | §8 OQ-1 | Timezone config surfaced as required open question | Devil's advocate: wall-clock quick-picks require a timezone |
 | 8 | §4 US-07 + §5 AC-07 | Delete restricted to fired reminders only | Critic F1+F5: no UI exists for pending-reminder deletion; lifecycle is pending→fired→done/deleted |
 | 9 | §6.1 | Removed "≤30 reminders/min" spam rate limit | Critic F2: single-owner bot, spam impossible; anti-flood in §6 covers Telegram 429 |
+| 10 | §5 AC-09 | Non-Owner → silently ignore (dropped "or inform sender") | clarify: «or» forked behavior; replying to spam is itself a flood/abuse vector |
+| 11 | §5 AC-05 | Snooze hides quick-picks whose wall-clock already passed | clarify: undefined behavior for past wall-clock picks (e.g. 19:00 after 20:00) |
+| 12 | §6.1 | Duplicate-fire → at-least-once: re-fire if delivery unconfirmed | clarify: §2 "no silent loss" tensions with "suppress duplicates" at crash boundary |
+| 13 | §1 ¶3 | "Empty chat" invariant scoped to fired-reminder messages only | clarify: AC-02 confirmation messages otherwise contradict the invariant |
+| 14 | §5 AC-06/07 | 48h delete-window fallback → edit message to placeholder | clarify: Telegram bots cannot delete messages >48h; invariant breaks silently |
+| 15 | §5 AC-13 (new) + §8 | Timezone unset → block capture, lead to /settings (OQ-1 resolved, removed) | clarify: AC-01 happy path assumed TZ existed; behavior-when-unset undefined |
+| 16 | §5 AC-11 | Link availability signal = public username + message id present | clarify: "may no longer be a member" was unmeasurable as a detection rule |
+| 17 | §8 (new row) | Custom-time input grammar deferred to design | clarify: AC-03/08 never defined accepted formats or partial-input defaults |
