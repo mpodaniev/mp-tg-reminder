@@ -1,14 +1,18 @@
 import type { ReminderRepository } from "../app/ports/reminder-repository.js";
 import type { TelegramGateway } from "../app/ports/telegram-gateway.js";
-import { CaptureMessage } from "../app/use-cases/capture-message.js";
 import { ScheduleReminder } from "../app/use-cases/schedule-reminder.js";
 import { SnoozeReminder } from "../app/use-cases/snooze-reminder.js";
 import { ResolveReminder } from "../app/use-cases/resolve-reminder.js";
+import { CaptureMessage } from "../app/use-cases/capture-message.js";
 import { handleForwardedMessage } from "./conversations/capture-conversation.js";
 import { handleSettings } from "./handlers/settings-handler.js";
-import { handleSnooze } from "./handlers/snooze-handler.js";
+import { handleSnooze, handleSnoozePick } from "./handlers/snooze-handler.js";
 import { handleResolve } from "./handlers/resolve-handler.js";
 import { handleSource } from "./handlers/source-handler.js";
+import { localTodayAt } from "./tz-utils.js";
+
+export type PendingCustom = { type: "capture" | "snooze"; reminderId: number };
+const pendingCustom = new Map<number, PendingCustom>();
 
 export function buildRouter(
   repo: ReminderRepository,
@@ -21,6 +25,8 @@ export function buildRouter(
   const resolveUC = new ResolveReminder(repo);
 
   return {
+    pendingCustom,
+
     async handleUpdate(ctx: any) {
       const msg = ctx.message;
 
@@ -32,13 +38,30 @@ export function buildRouter(
         return handleForwardedMessage(ctx, captureUC, scheduleUC);
       }
 
+      // Handle pending custom-time text input
+      const senderId: number | undefined = ctx.from?.id ?? ctx.message?.from?.id;
+      if (msg?.text && senderId && pendingCustom.has(senderId)) {
+        return handleCustomTimeInput(ctx, scheduleUC, snoozeUC, repo, gateway, ownerChatId, senderId);
+      }
+
       if (ctx.callbackQuery) {
         const data: string = ctx.callbackQuery.data ?? "";
-        const [action, idStr] = data.split(":");
-        const reminderId = parseInt(idStr, 10);
+        const parts = data.split(":");
+        const action = parts[0];
+        const reminderId = parseInt(parts[1] ?? "", 10);
+        const pick = parts[2];
 
         if (action === "snooze") {
-          return handleSnooze(ctx, snoozeUC, reminderId);
+          return handleSnooze(ctx, snoozeUC, repo, reminderId);
+        }
+        if (action === "snooze_pick") {
+          if (pick === "custom") {
+            pendingCustom.set(ownerChatId, { type: "snooze", reminderId });
+            await ctx.answerCallbackQuery?.();
+            await ctx.reply?.("✏️ Введіть бажаний час (наприклад: за 2 год, завтра 15:00, 20.06.2026 09:00):");
+            return;
+          }
+          return handleSnoozePick(ctx, snoozeUC, repo, reminderId, pick, gateway, ownerChatId);
         }
         if (action === "done" || action === "delete") {
           return handleResolve(ctx, resolveUC, gateway, reminderId, action as "done" | "delete", ownerChatId);
@@ -47,18 +70,30 @@ export function buildRouter(
           return handleSource(ctx, repo, gateway, reminderId, ownerChatId);
         }
         if (action === "qpick") {
-          return handleQuickPick(ctx, scheduleUC, idStr);
+          return handleQuickPick(ctx, scheduleUC, repo, reminderId, pick, ownerChatId);
         }
       }
     },
   };
 }
 
-async function handleQuickPick(ctx: any, scheduleUC: ScheduleReminder, dataStr: string): Promise<void> {
-  const parts = dataStr.split(":");
-  const reminderId = parseInt(parts[0], 10);
-  const pick = parts[1];
+async function handleQuickPick(
+  ctx: any,
+  scheduleUC: ScheduleReminder,
+  repo: ReminderRepository,
+  reminderId: number,
+  pick: string,
+  ownerChatId: number
+): Promise<void> {
+  if (pick === "custom") {
+    pendingCustom.set(ownerChatId, { type: "capture", reminderId });
+    await ctx.answerCallbackQuery?.();
+    await ctx.reply?.("✏️ Введіть бажаний час (наприклад: за 2 год, завтра 15:00, 20.06.2026 09:00):");
+    return;
+  }
 
+  const settings = await repo.getOwnerSettings();
+  const timezone = settings?.timezone ?? "UTC";
   const now = Date.now();
   let scheduledAt: number;
 
@@ -66,12 +101,141 @@ async function handleQuickPick(ctx: any, scheduleUC: ScheduleReminder, dataStr: 
     scheduledAt = now + 60 * 60 * 1000;
   } else if (pick === "week") {
     scheduledAt = now + 7 * 24 * 60 * 60 * 1000;
+  } else if (pick === "evening") {
+    scheduledAt = localTodayAt(timezone, 19, 0, 0);
+  } else if (pick === "tomorrow") {
+    scheduledAt = localTodayAt(timezone, 7, 0, 1);
   } else {
     await ctx.answerCallbackQuery?.("Невідомий quick-pick");
     return;
   }
 
   await scheduleUC.execute({ reminderId, scheduledAtMs: scheduledAt });
+
+  const formatted = new Intl.DateTimeFormat("uk", {
+    timeZone: timezone,
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(scheduledAt));
+
   await ctx.answerCallbackQuery?.("✅ Нагадування заплановано");
-  await ctx.reply?.("✅ Нагадування заплановано!");
+  await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+}
+
+async function handleCustomTimeInput(
+  ctx: any,
+  scheduleUC: ScheduleReminder,
+  snoozeUC: SnoozeReminder,
+  repo: ReminderRepository,
+  gateway: TelegramGateway,
+  ownerChatId: number,
+  senderId: number
+): Promise<void> {
+  const pending = pendingCustom.get(senderId)!;
+  pendingCustom.delete(senderId);
+
+  const text: string = ctx.message?.text ?? "";
+  const settings = await repo.getOwnerSettings();
+  const timezone = settings?.timezone ?? "UTC";
+
+  const scheduledAt = parseCustomTime(text, timezone);
+  if (scheduledAt === null) {
+    pendingCustom.set(senderId, pending);
+    await ctx.reply?.("❌ Не вдалося розпізнати час. Спробуйте: «за 2 год», «завтра 15:00», «20.06.2026 09:00»");
+    return;
+  }
+
+  if (scheduledAt <= Date.now()) {
+    pendingCustom.set(senderId, pending);
+    await ctx.reply?.("❌ Час нагадування повинен бути у майбутньому. Введіть інший час:");
+    return;
+  }
+
+  const formatted = new Intl.DateTimeFormat("uk", {
+    timeZone: timezone,
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(scheduledAt));
+
+  if (pending.type === "capture") {
+    await scheduleUC.execute({ reminderId: pending.reminderId, scheduledAtMs: scheduledAt });
+    await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+  } else {
+    const reminder = await repo.findById(pending.reminderId);
+    const firedMessageId = reminder?.firedMessageId ?? null;
+    await snoozeUC.execute({ reminderId: pending.reminderId, newScheduledAtMs: scheduledAt });
+    if (firedMessageId !== null) {
+      await gateway.editMessageToPlaceholder(ownerChatId, firedMessageId, `⏰ Відкладено до ${formatted}`);
+    }
+    await ctx.reply?.(`✅ Нагадування відкладено до ${formatted}`);
+  }
+}
+
+export function parseCustomTime(text: string, timezone: string): number | null {
+  const s = text.trim().toLowerCase();
+
+  // Relative: "за N год[ин]" or "за N хв"
+  const hoursMatch = s.match(/^за\s+(\d+)\s*год/);
+  if (hoursMatch) {
+    return Date.now() + parseInt(hoursMatch[1]!, 10) * 60 * 60 * 1000;
+  }
+  const minsMatch = s.match(/^за\s+(\d+)\s*хв/);
+  if (minsMatch) {
+    return Date.now() + parseInt(minsMatch[1]!, 10) * 60 * 1000;
+  }
+
+  // "завтра HH:MM"
+  const tomorrowMatch = s.match(/^завтра\s+(\d{1,2}):(\d{2})$/);
+  if (tomorrowMatch) {
+    const h = parseInt(tomorrowMatch[1]!, 10);
+    const m = parseInt(tomorrowMatch[2]!, 10);
+    if (h > 23 || m > 59) return null;
+    return localTodayAt(timezone, h, m, 1);
+  }
+
+  // "DD.MM.YYYY HH:MM" or "DD.MM.YYYY" (defaults to 09:00)
+  const fullMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/);
+  if (fullMatch) {
+    const day = parseInt(fullMatch[1]!, 10);
+    const month = parseInt(fullMatch[2]!, 10);
+    const year = parseInt(fullMatch[3]!, 10);
+    const h = fullMatch[4] !== undefined ? parseInt(fullMatch[4]!, 10) : 9;
+    const m = fullMatch[5] !== undefined ? parseInt(fullMatch[5]!, 10) : 0;
+    if (month < 1 || month > 12 || day < 1 || day > 31 || h > 23 || m > 59) return null;
+    const offsetMs = getUtcOffsetMsForDate(timezone, year, month - 1, day);
+    return Date.UTC(year, month - 1, day, h, m, 0, 0) - offsetMs;
+  }
+
+  // "HH:MM" — next occurrence of that time today or tomorrow
+  const timeOnlyMatch = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (timeOnlyMatch) {
+    const h = parseInt(timeOnlyMatch[1]!, 10);
+    const m = parseInt(timeOnlyMatch[2]!, 10);
+    if (h > 23 || m > 59) return null;
+    const todayMs = localTodayAt(timezone, h, m, 0);
+    return todayMs > Date.now() ? todayMs : localTodayAt(timezone, h, m, 1);
+  }
+
+  return null;
+}
+
+function getUtcOffsetMsForDate(timezone: string, year: number, month0: number, day: number): number {
+  const probe = new Date(Date.UTC(year, month0, day, 12, 0, 0, 0));
+  const local = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(probe);
+  return new Date(local.replace(", ", "T") + "Z").getTime() - probe.getTime();
 }
