@@ -7,7 +7,7 @@ feature_size: "M"
 target_surfaces: [backend-service]  # one process hosts the update handler + an in-process scheduler container. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
 ---
 
-# Software Architecture Document — <slug>
+# Software Architecture Document — telegram-reminder
 
 <!-- 12 Arc42 sections. Empty section → <!-- N/A: <one-line reason> -->. -->
 <!-- C4 Context (L1) lives inline in §3. C4 Container (L2) lives inline in §5. -->
@@ -143,7 +143,8 @@ C4Context
 ```
 src/
 ├── domain/      Reminder-сутність + lifecycle state-machine
-│                (awaiting_time → pending → firing → fired → done|deleted|expired),
+│                (awaiting_time → pending → firing → fired → done|deleted;
+│                 окремо awaiting_time → expired за 24h),
 │                value-objects (ScheduledTime, SourceMessageSnapshot), sentinel-помилки
 ├── app/         use-cases: CaptureMessage, ScheduleReminder, FireDueReminders,
 │                SnoozeReminder, ResolveReminder (done/delete), ExpireStalePrompts
