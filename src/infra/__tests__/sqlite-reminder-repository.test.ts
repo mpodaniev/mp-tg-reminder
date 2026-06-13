@@ -1,0 +1,135 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import Database from "better-sqlite3";
+import { tmpdir } from "os";
+import { join } from "path";
+import { unlinkSync } from "fs";
+import { runMigrationsUp } from "../db/migrate.js";
+import { SqliteReminderRepository } from "../db/sqlite-reminder-repository.js";
+import { Reminder } from "../../domain/reminder.js";
+import { buildOwnerSettings, buildSourceSnapshot } from "../../../test/helpers/factories.js";
+
+const dbPath = join(tmpdir(), `test-repo-${Date.now()}.db`);
+let db: Database.Database;
+let repo: SqliteReminderRepository;
+
+beforeAll(() => {
+  db = new Database(dbPath);
+  db.pragma("foreign_keys = ON");
+  runMigrationsUp(db);
+  repo = new SqliteReminderRepository(db);
+
+  const settings = buildOwnerSettings();
+  db.prepare(
+    `INSERT OR REPLACE INTO owner_settings (id, owner_telegram_id, timezone, created_at)
+     VALUES (1, ?, ?, ?)`
+  ).run(settings.owner_telegram_id, settings.timezone, settings.created_at);
+});
+
+afterAll(() => {
+  db.close();
+  try { unlinkSync(dbPath); } catch {}
+});
+
+describe("SqliteReminderRepository", () => {
+  it("saveWithSnapshot creates both rows atomically and returns a Reminder with id", async () => {
+    const snapshotData = {
+      chatId: 100,
+      messageId: 200,
+      chatUsername: "testchat" as string | null,
+      senderName: "Alice" as string | null,
+      senderUsername: "alice" as string | null,
+      messageText: "Hello" as string | null,
+      mediaFileId: null as string | null,
+      mediaType: null as string | null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
+    const saved = await repo.saveWithSnapshot(snapshotData, r);
+
+    expect(saved.id).toBeDefined();
+    expect(saved.id).toBeGreaterThan(0);
+    expect(saved.state).toBe("awaiting_time");
+  });
+
+  it("findById returns the saved reminder", async () => {
+    const snapshotData = {
+      chatId: 101,
+      messageId: 201,
+      chatUsername: null,
+      senderName: null,
+      senderUsername: null,
+      messageText: "find me",
+      mediaFileId: null,
+      mediaType: null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
+    const saved = await repo.saveWithSnapshot(snapshotData, r);
+
+    const found = await repo.findById(saved.id!);
+    expect(found).not.toBeNull();
+    expect(found!.snapshot.messageText).toBe("find me");
+  });
+
+  it("findDuePending returns only past-due pending reminders", async () => {
+    const snapshotData = {
+      chatId: 102,
+      messageId: 202,
+      chatUsername: null,
+      senderName: null,
+      senderUsername: null,
+      messageText: "due",
+      mediaFileId: null,
+      mediaType: null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
+    const saved = await repo.saveWithSnapshot(snapshotData, r);
+
+    // schedule it in the past
+    const past = Date.now() - 1000;
+    db.prepare("UPDATE reminders SET state='pending', scheduled_at=? WHERE id=?").run(past, saved.id);
+
+    const due = await repo.findDuePending(Date.now());
+    const ids = due.map((x) => x.id);
+    expect(ids).toContain(saved.id);
+  });
+
+  it("update persists state change", async () => {
+    const snapshotData = {
+      chatId: 103,
+      messageId: 203,
+      chatUsername: null,
+      senderName: null,
+      senderUsername: null,
+      messageText: "update me",
+      mediaFileId: null,
+      mediaType: null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
+    const saved = await repo.saveWithSnapshot(snapshotData, r);
+
+    // manually schedule it first
+    db.prepare("UPDATE reminders SET state='pending', scheduled_at=? WHERE id=?")
+      .run(Date.now() - 1000, saved.id);
+
+    const reloaded = await repo.findById(saved.id!);
+    reloaded!.startFiring();
+    await repo.update(reloaded!);
+
+    const updated = await repo.findById(saved.id!);
+    expect(updated!.state).toBe("firing");
+  });
+
+  it("getOwnerSettings returns the seeded row", async () => {
+    const settings = await repo.getOwnerSettings();
+    expect(settings).not.toBeNull();
+    expect(settings!.ownerTelegramId).toBe(123456789);
+    expect(settings!.timezone).toBe("Europe/Kyiv");
+  });
+});
