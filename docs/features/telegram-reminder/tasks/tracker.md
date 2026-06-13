@@ -5,19 +5,23 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T01 | Project scaffold | wiring | Mykhailo Podaniev | S | — | todo |
-| T02 | Promote staged migrations + migration runner | migration | Mykhailo Podaniev | S | T01 | todo |
-| T03 | Reminder entity + state machine + value objects + errors | domain | Mykhailo Podaniev | M | T01 | todo |
-| T04 | Port interfaces: ReminderRepository + TelegramGateway | app | Mykhailo Podaniev | S | T03 | todo |
-| T05 | Use cases: CaptureMessage + ScheduleReminder | app | Mykhailo Podaniev | M | T04 | todo |
-| T06 | Use cases: FireDueReminders + ExpireStalePrompts | app | Mykhailo Podaniev | M | T04 | todo |
-| T07 | Use cases: SnoozeReminder + ResolveReminder | app | Mykhailo Podaniev | S | T04 | todo |
-| T08 | SqliteReminderRepository + test factories | infra | Mykhailo Podaniev | M | T02, T04 | todo |
-| T09 | GrammyTelegramGateway | infra | Mykhailo Podaniev | S | T04 | todo |
-| T10 | grammY router + capture conversation + /settings | ports | Mykhailo Podaniev | M | T05, T09 | todo |
-| T11 | Callback handlers: Snooze, Done, Delete, Go-to-source | ports | Mykhailo Podaniev | M | T07, T09 | todo |
-| T12 | In-process polling-tick scheduler worker | ports | Mykhailo Podaniev | S | T06, T09 | todo |
-| T13 | Composition root main.ts + startup wiring | wiring | Mykhailo Podaniev | S | T08, T10, T11, T12 | todo |
-| T14 | Integration tests: restart durability + fire accuracy + E2E | tests | Mykhailo Podaniev | M | T13 | todo |
+| T01 | Project scaffold | wiring | Mykhailo Podaniev | S | — | done |
+| T02 | Promote staged migrations + migration runner | migration | Mykhailo Podaniev | S | T01 | done |
+| T03 | Reminder entity + state machine + value objects + errors | domain | Mykhailo Podaniev | M | T01 | done |
+| T04 | Port interfaces: ReminderRepository + TelegramGateway | app | Mykhailo Podaniev | S | T03 | done |
+| T05 | Use cases: CaptureMessage + ScheduleReminder | app | Mykhailo Podaniev | M | T04 | done |
+| T06 | Use cases: FireDueReminders + ExpireStalePrompts | app | Mykhailo Podaniev | M | T04 | done |
+| T07 | Use cases: SnoozeReminder + ResolveReminder | app | Mykhailo Podaniev | S | T04 | done |
+| T08 | SqliteReminderRepository + test factories | infra | Mykhailo Podaniev | M | T02, T04 | done |
+| T09 | GrammyTelegramGateway | infra | Mykhailo Podaniev | S | T04 | done |
+| T10 | grammY router + capture conversation + /settings | ports | Mykhailo Podaniev | M | T05, T09 | done |
+| T11 | Callback handlers: Snooze, Done, Delete, Go-to-source | ports | Mykhailo Podaniev | M | T07, T09 | done |
+| T12 | In-process polling-tick scheduler worker | ports | Mykhailo Podaniev | S | T06, T09 | done |
+| T13 | Composition root main.ts + startup wiring | wiring | Mykhailo Podaniev | S | T08, T10, T11, T12 | done |
+| T14 | Integration tests: restart durability + fire accuracy + E2E | tests | Mykhailo Podaniev | M | T13 | done |
 
-**Total:** 14 tasks, ~7–9 person-days.
+| T15 | Fix router callback parsing + quick-pick timezone + snooze_pick routing + snooze edit message | ports | Mykhailo Podaniev | M | T14 | done |
+| T16 | Custom-time conversation (AC-03/AC-08) | ports | Mykhailo Podaniev | M | T15 | done |
+| T17 | Auth-gate callbacks + timezone null + AC-12 test + durability tests | ports | Mykhailo Podaniev | S | T14 | done |
+
+**Total:** 17 tasks (14 done + 3 follow-up from review-2026-06-13).

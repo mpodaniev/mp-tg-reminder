@@ -1,0 +1,29 @@
+{
+  "name": "telegram-reminder",
+  "version": "0.1.0",
+  "description": "Personal Telegram bot that captures forwarded messages and fires them as reminders",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "node --env-file=.env dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate:up": "node dist/infra/db/migrate.js up",
+    "migrate:down": "node dist/infra/db/migrate.js down"
+  },
+  "dependencies": {
+    "@grammyjs/conversations": "^1.2.0",
+    "better-sqlite3": "^9.4.3",
+    "grammy": "^1.21.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
