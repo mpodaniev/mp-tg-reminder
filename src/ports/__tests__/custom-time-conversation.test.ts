@@ -207,6 +207,23 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
     expect(errMsg).toMatch(/майбутн|future/i);
   });
 
+  it("snooze-via-custom on an already-resolved reminder replies 'already resolved' instead of throwing (AC-10)", async () => {
+    const r = Reminder.reconstitute({ id: 9, snapshot: makeSnapshot(9), state: "done" });
+    repo.reminders.set(9, r);
+
+    router.pendingCustom.set(OWNER_CHAT_ID, { type: "snooze", reminderId: 9 });
+
+    const ctx = makeTextCtx("20.06.2026 15:00");
+    await router.handleUpdate(ctx as any);
+
+    const updated = await repo.findById(9);
+    expect(updated!.state).toBe("done");
+    expect(ctx.reply).toHaveBeenCalled();
+    const msg: string = (ctx.reply as any).mock.calls[0][0];
+    expect(msg).toMatch(/вже вирішено|already resolved/i);
+    expect(gateway.editMessageToPlaceholder).not.toHaveBeenCalled();
+  });
+
   it("unrecognized custom time text is rejected and prompt stays open (AC-08)", async () => {
     const r = Reminder.reconstitute({ id: 8, snapshot: makeSnapshot(8), state: "awaiting_time" });
     repo.reminders.set(8, r);

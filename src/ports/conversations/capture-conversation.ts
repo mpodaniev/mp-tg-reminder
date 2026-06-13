@@ -1,5 +1,4 @@
 import type { CaptureMessage } from "../../app/use-cases/capture-message.js";
-import type { ScheduleReminder } from "../../app/use-cases/schedule-reminder.js";
 import { TimezoneNotConfiguredError, UnauthorizedError } from "../../domain/errors.js";
 
 type MinimalCtx = {
@@ -70,8 +69,7 @@ function buildQuickPickKeyboard(reminderId: number, timezone: string, now: Date)
 
 export async function handleForwardedMessage(
   ctx: MinimalCtx,
-  captureUC: CaptureMessage,
-  scheduleUC: ScheduleReminder
+  captureUC: CaptureMessage
 ): Promise<void> {
   const senderId = ctx.from?.id;
   if (!senderId) return;

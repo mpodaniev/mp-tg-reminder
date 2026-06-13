@@ -10,6 +10,7 @@ import { handleSnooze, handleSnoozePick } from "./handlers/snooze-handler.js";
 import { handleResolve } from "./handlers/resolve-handler.js";
 import { handleSource } from "./handlers/source-handler.js";
 import { localTodayAt } from "./tz-utils.js";
+import { AlreadyResolvedError } from "../domain/errors.js";
 
 export type PendingCustom = { type: "capture" | "snooze"; reminderId: number };
 const pendingCustom = new Map<number, PendingCustom>();
@@ -35,7 +36,7 @@ export function buildRouter(
       }
 
       if (msg?.forward_origin || msg?.forward_date || msg?.forward_from || msg?.forward_from_chat) {
-        return handleForwardedMessage(ctx, captureUC, scheduleUC);
+        return handleForwardedMessage(ctx, captureUC);
       }
 
       // Handle pending custom-time text input
@@ -172,13 +173,21 @@ async function handleCustomTimeInput(
     await scheduleUC.execute({ reminderId: pending.reminderId, scheduledAtMs: scheduledAt });
     await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
   } else {
-    const reminder = await repo.findById(pending.reminderId);
-    const firedMessageId = reminder?.firedMessageId ?? null;
-    await snoozeUC.execute({ reminderId: pending.reminderId, newScheduledAtMs: scheduledAt });
-    if (firedMessageId !== null) {
-      await gateway.editMessageToPlaceholder(ownerChatId, firedMessageId, `⏰ Відкладено до ${formatted}`);
+    try {
+      const reminder = await repo.findById(pending.reminderId);
+      const firedMessageId = reminder?.firedMessageId ?? null;
+      await snoozeUC.execute({ reminderId: pending.reminderId, newScheduledAtMs: scheduledAt });
+      if (firedMessageId !== null) {
+        await gateway.editMessageToPlaceholder(ownerChatId, firedMessageId, `⏰ Відкладено до ${formatted}`);
+      }
+      await ctx.reply?.(`✅ Нагадування відкладено до ${formatted}`);
+    } catch (err) {
+      if (err instanceof AlreadyResolvedError) {
+        await ctx.reply?.("❌ Нагадування вже вирішено — дія неможлива.");
+        return;
+      }
+      throw err;
     }
-    await ctx.reply?.(`✅ Нагадування відкладено до ${formatted}`);
   }
 }
 

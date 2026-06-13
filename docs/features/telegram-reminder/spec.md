@@ -197,6 +197,9 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 - [ ] What input grammar does "Custom time" accept (natural-language relative phrases, structured `DD.MM.YYYY HH:MM`, or both), and how are partial inputs filled? Default now: accept both — relative ("за 2 год", "завтра 15:00") and structured; date-only → defaults to 09:00; time-only → next future occurrence. — owner: Mykhailo Podaniev, due: before sdd:design
 - [ ] Should the bot send a reminder even if it cannot recover the original media (e.g. expired file reference)? Default now: yes — fire with text only and a note (per AC-12). — owner: Mykhailo Podaniev, due: before sdd:tasks
 - [ ] What happens if the Owner never responds to a "When to remind?" prompt (bot is waiting, Owner ignores it)? Default now: prompt expires after 24 hours and the forwarded message is discarded with a bot notification. — owner: Mykhailo Podaniev, due: before sdd:design
+- [ ] **[S2-4, review-2026-06-13]** `messageId !== null` guard in `SourceSnapshot` is dead code (`messageId` is typed `number`, non-nullable). AC-11 link-availability is effectively a username-only check. Decide: remove guard, or widen `messageId` to `number | null`. — owner: Mykhailo Podaniev, due: before next release
+- [ ] **[S2-5, review-2026-06-13]** Use cases (`ScheduleReminder`, `SnoozeReminder`, `ResolveReminder`) throw raw `new Error(...)` on not-found instead of domain sentinels. Hits `bot.catch` rather than user-facing message. Introduce typed domain errors per §8 architecture. — owner: Mykhailo Podaniev, due: before next release
+- [x] **[S2-6, review-2026-06-13 → resolved review-2026-06-13b]** `scheduleUC` dead parameter in `capture-conversation.ts` removed (AC-03 landed via the `qpick` router branch, never via the capture conversation, so the deferral trigger had fired). Done in the re-review pass.
 
 ---
 
