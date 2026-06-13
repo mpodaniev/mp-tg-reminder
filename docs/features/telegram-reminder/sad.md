@@ -77,30 +77,33 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
      Trust boundary — the line past which you don't trust data without checking it.
      Never N/A — greenfield still draws the planned actors + external systems. -->
 
-<Business context in 2–3 sentences. What the system does for whom.>
+Система — персональний Telegram-бот, що обслуговує єдиного користувача (Owner). Owner не звертається до бота напряму: усі взаємодії проходять через клієнт Telegram і **Telegram Bot API** — єдину зовнішню систему, з якою бот інтегрується. Bot API доставляє боту вхідні update'и (переслані повідомлення, натискання inline-кнопок) і ретранслює дії бота (надсилання / редагування / видалення повідомлень) назад у чат Owner.
 
-<!-- brownfield: <one-line scan summary> (or «N/A — greenfield repo» if no source existed) -->
+<!-- brownfield: N/A — greenfield repo -->
+
+**Межа довіри:** усе, що приходить від Telegram, вважається недовіреним, доки `user_id` відправника не звірено з налаштованим Owner-ID; non-Owner update'и відкидаються до будь-якої обробки чи запису (spec §6.1, AC-09).
 
 **External systems (in / out):**
 
 | Actor or system | Type | Interaction |
 |---|---|---|
-| <author role> | Person | <what they do> |
-| <external service> | System (internal/external) | <interaction> |
-| <identity provider> | System (external) | <provides auth tokens> |
+| Owner | Person | Пересилає повідомлення, натискає inline-кнопки, отримує спрацьовані нагадування — усе через клієнт Telegram |
+| Telegram Bot API | System (external) | Доставляє боту update'и (in); приймає від бота надсилання / редагування / видалення повідомлень (out) |
 
 **C4 Context (L1):** <!-- syntax → references/c4-mermaid-syntax.md. Real names, no <placeholder> stubs. -->
 
 ```mermaid
 C4Context
-    title <feature> — System Context
+    title telegram-reminder — System Context
 
-    Person(actor, "<Actor role>", "<intent>")
-    System(app, "<Our system>", "<one-sentence description>")
-    System_Ext(ext, "<External system>", "<one-sentence description>")
+    Person(owner, "Owner", "Forwards messages, schedules and resolves reminders")
+    System(bot, "Telegram Reminder Bot", "Captures forwarded messages, durably schedules and fires reminders")
+    System_Ext(tg, "Telegram Bot API", "Message transport — delivers updates in, relays bot actions out")
 
-    Rel(actor, app, "<interaction>", "<protocol>")
-    Rel(app, ext, "<interaction>", "<protocol>")
+    Rel(owner, tg, "Forwards messages, taps inline buttons", "Telegram client")
+    Rel(tg, bot, "Delivers updates", "HTTPS")
+    Rel(bot, tg, "Sends / edits / deletes messages", "HTTPS")
+    Rel(tg, owner, "Shows prompts and fired reminders", "Telegram client")
 ```
 
 ## 4. Solution strategy
