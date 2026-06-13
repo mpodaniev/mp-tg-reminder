@@ -353,12 +353,16 @@ Top-3 quality goals з §1 (+ 2 підтримувальні NFR) розгорн
 
 | Risk / debt | Severity | Mitigation | Owner |
 |---|---|---|---|
-| <e.g. Worker lag may reach hours during a downstream outage> | Medium | <alert >10 min, on-call playbook, retry backoff> | <DevOps> |
-| <e.g. No event-schema versioning in v1> | Medium | <ADR-NNNN planned for v2, tolerate unknown fields> | <Backend> |
-| Open architectural decision: <decision-headline> | Open question | Resolve before <stage trigger or YYYY-MM-DD>; <inline rationale from the Save-as-OQ> | <owner> |
+| Single-replica double-fire (запуск 2 екземплярів → нагадування фаєрять двічі) | Medium | Process-manager гарантує один екземпляр; задокументувати обмеження; опційний advisory file-lock на старті | Mykhailo Podaniev |
+| Рідкісний дубль на межі delivery↔`delivered_at` крах | Low | Accepted per spec §6.1 (at-least-once); звузити пізніше через Telegram message-id idempotency | Mykhailo Podaniev |
+| Telegram delete-window > 48h блокує видалення fired-повідомлення | Low | Edit повідомлення до empty/resolved placeholder (AC-06/07) | Mykhailo Podaniev |
+| Обрив long-polling-з'єднання при transient network failure | Low | grammY auto-reconnect з backoff | Mykhailo Podaniev |
+| Open architectural decision: фаєрити нагадування при невідновлюваному media (spec §8 OQ-2) | Open question | Resolve before `sdd:tasks`; default = fire text + note per AC-12 | Mykhailo Podaniev |
 
 **Accepted debt (acceptable in v1, plan to fix later):**
-- <e.g. the entity is immutable / unversioned — OK for v1, may need audit versioning in v2>
+- At-least-once може зрідка дублювати нагадування на crash-межі — прийнятно для v1 per spec §6.1.
+- `better-sqlite3` — нативний модуль, потребує рекомпіляції на Node major-version bump (ADR-0001).
+- Без HA — availability обмежена uptime одного хоста; прийнятно для персонального інструменту (non-goal: multi-user, spec §3).
 
 ## 12. Glossary
 
@@ -367,8 +371,19 @@ Top-3 quality goals з §1 (+ 2 підтримувальні NFR) розгорн
      📋 Write: a term / meaning table. Business + technical terms mixed.
      📌 e.g. «Lesson | a unit inside a course made of blocks (text, video)». -->
 
+<!-- Базові доменні терміни (Owner, Source message, Quick-pick, Snooze, Fire, Protected-content, Deep link…) — у [CONTEXT](./CONTEXT.md) ## Glossary. Нижче — терміни, що виринули на етапі design. -->
+
 | Term | Meaning |
 |---|---|
-| <e.g. domain object A> | <its meaning in this domain> |
-| <e.g. domain object B> | <its meaning> |
-| <e.g. domain invariant name> | <the rule, in plain language> |
+| Reminder lifecycle | State-machine: `awaiting_time → pending → firing → fired → done\|deleted`; `awaiting_time → expired` (24h); `fired → pending` (snooze) |
+| `awaiting_time` | Повідомлення захоплено, час ще не обрано; спливає через 24 год (DEC-6.2) |
+| `pending` | Заплановано, очікує спрацювання |
+| `firing` | Транзитний стан — надіслано, очікує підтвердження доставки (ADR-0005) |
+| `fired` | Доставлено (`delivered_at` встановлено) |
+| `done` / `deleted` | Resolved-стани; fired-повідомлення прибране з чату |
+| `expired` | Prompt `awaiting_time` без відповіді 24 год; snapshot відкинуто |
+| Polling tick | Періодичний прохід scheduler'а (~15 с), що вибирає й фаєрить due-нагадування (ADR-0004) |
+| `delivered_at` | Час підтвердженої Telegram-доставки; guard для at-least-once (ADR-0005) |
+| `scheduled_at` | Час спрацювання нагадування, зберігається в UTC (§8) |
+| Cleared-inbox invariant | Чат бота без fired-reminder-повідомлень = немає незавершеної роботи (spec §1) |
+| Port / Adapter | Інтерфейс зовнішньої залежності (ReminderRepository, TelegramGateway) та його реалізація в `infra` (ADR-0006) |
