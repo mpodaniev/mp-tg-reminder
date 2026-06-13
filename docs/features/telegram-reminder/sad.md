@@ -244,6 +244,194 @@ sequenceDiagram
 
 **Двофазова обробка (lifecycle):** перед `pending` нагадування проходить фазу `awaiting_time` (захоплено, час ще не обрано). Якщо Owner не відповідає на prompt — спрацьовує expiry (DEC-6.2). Custom-time-парсинг (DEC-6.3) живить крок «Запланувати на обраний час» у Flow 1.
 
+### Flow 3: Захоплення — non-Owner та timezone gate (AC-09, AC-13)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant ES as <external-system>
+    participant S as <service>
+    participant D as <data-store>
+
+    Note over ES,S: Precondition — incoming update delivered to bot, sender identity unknown
+    ES->>S: deliver incoming update
+    S->>S: validate sender_id against Owner-ID
+    alt sender is not Owner (AC-09)
+        Note over S: silent discard — no write, no reply sent
+    else sender is Owner, timezone not configured (AC-13)
+        S->>D: read Owner settings
+        D-->>S: settings (timezone = null)
+        S->>ES: send timezone-setup prompt ("configure via /settings first")
+        ES-->>Owner: /settings prompt
+        Note over S,D: persists nothing — read-only settings check
+    end
+    Note over ES,S: Postcondition — AC-09: no data stored, no reply — AC-13: /settings prompt sent, capture paused
+```
+
+### Flow 4: Custom time — happy path та минулий час (AC-03, AC-08)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant ES as <external-system>
+    participant S as <service>
+    participant D as <data-store>
+
+    Note over ES,S: Precondition — Owner tapped "Custom time", reminder in awaiting_time state, timezone is set
+    Owner->>ES: tap "Custom time"
+    ES->>S: callback query (custom_time, reminder_id)
+    S->>ES: prompt "Enter date or time"
+    ES-->>Owner: free-text input prompt
+    Owner->>ES: text message (date/time expression)
+    ES->>S: deliver text input
+    S->>S: parse expression, resolve to UTC using Owner timezone
+    alt parsed time is in the future (AC-03)
+        S->>D: update reminder (state=pending, scheduled_at=UTC)
+        Note over S,D: persists state=pending, scheduled_at — informs index on scheduled_at
+        D-->>S: ok
+        S->>ES: confirm "Reminder set for [chosen time in human-readable form]"
+        ES-->>Owner: confirmation message
+        Note over ES,S: Postcondition — reminder is pending, scheduled_at locked to chosen time
+    else parsed time is in the past or invalid (AC-08)
+        S->>ES: error "Reminder time must be in the future"
+        ES-->>Owner: error message; custom-time prompt stays open
+        Note over ES,S: Postcondition — reminder remains in awaiting_time, no scheduled_at written
+    end
+```
+
+### Flow 5: Фаєринг — protected-content media (AC-12)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as <client>
+    participant S as <service>
+    participant D as <data-store>
+    participant ES as <external-system>
+    actor Owner
+
+    Note over C,S: Trigger — polling tick, due reminder whose source media is from a protected-content chat
+    C->>S: tick — fire due reminders
+    S->>D: select due reminders (state=pending, scheduled_at<=now)
+    D-->>S: due reminder with media marked unavailable
+    S->>S: check idempotency — skip if state already firing
+    S->>D: mark reminder as firing
+    Note over S,D: persists state=firing
+    D-->>S: ok
+    S->>ES: send reminder with available text + note "media unavailable due to source restrictions" + all action buttons
+    Note over S,ES: retry up to 3 times with exponential backoff on network error
+    alt delivery confirmed (AC-12)
+        ES-->>Owner: reminder message (text + note + Snooze/Done/Delete/Go-to-source buttons)
+        ES-->>S: delivery ack
+        S->>D: mark fired, set delivered_at
+        Note over S,D: persists state=fired, delivered_at
+    else exhausted retries
+        S->>D: leave state=firing for next-tick re-fire
+        Note over S,D: dead-letter — firing row survives restart, re-fires on next tick
+    end
+    Note over C,S: Postcondition — Owner received reminder with text, all action buttons present (AC-12)
+```
+
+### Flow 6: Snooze — happy path та resolved-guard (AC-05, AC-10)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant ES as <external-system>
+    participant S as <service>
+    participant D as <data-store>
+
+    Note over ES,S: Precondition: Owner taps Snooze on a fired reminder
+    Owner->>ES: tap Snooze button
+    ES->>S: callback query (snooze, reminder_id)
+    S->>D: read reminder state by reminder_id
+    D-->>S: reminder (state)
+    alt reminder is already done or deleted (AC-10)
+        S->>ES: reply "Reminder already resolved — no further action possible"
+        ES-->>Owner: resolved-guard message
+        Note over ES,S: Postcondition — no state change, Owner informed
+    else reminder is fired (AC-05)
+        S->>ES: show snooze quick-picks (only future wall-clock times shown; past picks hidden)
+        ES-->>Owner: snooze-time options
+        Owner->>ES: select new time (quick-pick or custom)
+        ES->>S: snooze-time selection
+        S->>D: update reminder (state=pending, scheduled_at=new UTC time)
+        Note over S,D: persists state=pending, updated scheduled_at
+        D-->>S: ok
+        S->>ES: edit fired-reminder message to show rescheduled state
+        ES-->>Owner: updated message
+        Note over ES,S: Postcondition — reminder is pending with new scheduled_at, fired-reminder message updated (AC-05)
+    end
+```
+
+### Flow 7: Done / Delete та 48h fallback (AC-06, AC-07)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant ES as <external-system>
+    participant S as <service>
+    participant D as <data-store>
+
+    Note over ES,S: Precondition: Owner taps Done or Delete on a fired reminder
+    Owner->>ES: tap Done or Delete button
+    ES->>S: callback query (action=done or action=delete, reminder_id)
+    S->>D: update reminder (state=done or state=deleted)
+    Note over S,D: persists state=done or state=deleted
+    D-->>S: ok
+    S->>ES: request delete of fired-reminder message
+    alt deletion accepted by Telegram (AC-06, AC-07)
+        ES-->>S: deletion confirmed
+        Note over ES,S: Postcondition — message removed from chat, cleared-inbox invariant holds
+    else deletion rejected — message older than 48h delete window (AC-06, AC-07)
+        ES-->>S: deletion rejected
+        S->>ES: edit message to empty resolved placeholder
+        ES-->>Owner: placeholder visible in chat
+        Note over ES,S: Postcondition: cleared-inbox invariant holds visually via placeholder
+    end
+```
+
+### Flow 8: Go to source та graceful fallback (AC-11)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant ES as <external-system>
+    participant S as <service>
+    participant D as <data-store>
+
+    Note over ES,S: Precondition: Owner taps "Go to source" on a fired reminder
+    Owner->>ES: tap Go to source button
+    ES->>S: callback query (go_to_source, reminder_id)
+    S->>D: read source snapshot (chat_username, message_id)
+    D-->>S: source snapshot
+    alt public chat_username and message_id both present (AC-11 happy path)
+        S->>ES: send deep link to source message
+        ES-->>Owner: navigable deep link
+        Note over ES,S: Postcondition: Owner navigated to source message
+    else private chat or DM or link unavailable (AC-11 fallback)
+        S->>ES: reply "Direct link unavailable" + captured message content inline
+        ES-->>Owner: inline source content with explanation
+        Note over ES,S: Postcondition — Owner sees source content, no deep link sent
+    end
+```
+
+---
+
+**§6 coverage summary (sequences stage):** 8 US + 13 AC — all covered. No gaps.
+
+**Flagged for data-model:**
+- `scheduled_at` is read in Flows 2, 4, 6 — a composite index on `(state, scheduled_at)` is likely needed (scheduler query: `state=pending AND scheduled_at<=now`; snooze update targets the same column).
+- `reminder_id` PK lookup appears in every callback flow (3, 6, 7, 8) — primary-key index is implicit in SQLite, no extra index required.
+
+**No new participants** introduced beyond §5 building blocks.
+**No new ADR-worthy decisions** surfaced — retry count (3) is consistent with ADR-0005; 48h window is already in §8/§11.
+
 ## 7. Deployment view
 
 <!-- 🎯 Why: the TOPOLOGY DevOps must know without reading the deploy charts — how many replicas,
