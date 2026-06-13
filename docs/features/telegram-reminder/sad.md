@@ -136,39 +136,49 @@ C4Context
      just one surface's container — swap/add per what was declared in §4. → _shared/surfaces.md
      📌 e.g. «web app, content API, media worker, datastore, object store, CDN». -->
 
-<One paragraph: layered / hexagonal / clean / event-driven, and why.>
+**Ports-and-adapters (hexagonal)** (ADR-0006). domain + app у центрі; дві зовнішні залежності — сховище і Telegram — за port-інтерфейсами (`ReminderRepository`, `TelegramGateway`), а їхні реалізації (better-sqlite3, grammY) живуть як адаптери в `infra`. Це робить фаєринг- і at-least-once-логіку (ADR-0004/0005, стовп durability) тестовною ізольовано — проти in-memory store + fake-gateway, без реального Telegram чи диска. Застосунок — одна фіча (reminder), один deployable Node-процес; scheduler — внутрішній компонент того ж процесу, але показаний окремим контейнером, бо його lifecycle самостійний.
 
 **Internal decomposition:**
 
 ```
-<e.g. modules/<feature>/>
-├── domain/       <entities + sentinel errors>
-├── app/          <use cases / services>
-├── infra/        <repository + integration impl>
-├── ports/        <handlers, DTOs, error mapping>
-└── wiring        <self-wiring entry point>
+src/
+├── domain/      Reminder-сутність + lifecycle state-machine
+│                (awaiting_time → pending → firing → fired → done|deleted|expired),
+│                value-objects (ScheduledTime, SourceMessageSnapshot), sentinel-помилки
+├── app/         use-cases: CaptureMessage, ScheduleReminder, FireDueReminders,
+│                SnoozeReminder, ResolveReminder (done/delete), ExpireStalePrompts
+│                + порти: ReminderRepository, TelegramGateway (інтерфейси)
+├── infra/       SqliteReminderRepository (better-sqlite3), GrammyTelegramGateway
+├── ports/       grammY-роутер + conversations (діалог «коли нагадати?»),
+│                callback-query handlers, DTO, error-mapping
+├── scheduler/   polling-tick worker (in-process)
+└── main.ts      composition root (wiring)
 ```
 
-**C4 Container (L2):** <!-- syntax → references/c4-mermaid-syntax.md. Real names, no <placeholder> stubs. ONE Container per declared target_surface (frontmatter); the web container below is one example surface. -->
+**C4 Container (L2):** <!-- syntax → references/c4-mermaid-syntax.md. Real names, no <placeholder> stubs. ONE Container per declared target_surface (frontmatter); single surface backend-service. -->
 
 ```mermaid
 C4Container
-    title <feature> — Containers
+    title telegram-reminder — Containers
 
-    Person(actor, "<Actor>")
+    Person(owner, "Owner", "Forwards messages, taps inline buttons")
+    System_Ext(tg, "Telegram Bot API", "Message transport")
 
-    Container_Boundary(app, "<Our system>") {
-        Container(web, "<Web/UI>", "<technology>", "<purpose>")
-        Container(api, "<API/handler>", "<technology>", "<purpose>")
-        ContainerDb(db, "<Datastore>", "<technology>", "<purpose>")
+    Container_Boundary(bot, "Telegram Reminder Bot (single Node process)") {
+        Container(handler, "Update Handler", "Node 22 / TS / grammY", "Validates Owner, runs the capture+scheduling dialog, handles inline-button callbacks")
+        Container(scheduler, "Reminder Scheduler", "Node 22 / TS", "Polling tick (~15s): selects and fires due reminders")
+        Container(core, "Reminder Core", "TypeScript", "Domain + use cases: lifecycle, snooze, resolve, at-least-once fire; ports to store and Telegram")
     }
 
-    System_Ext(ext, "<External>", "<purpose>")
+    ContainerDb(db, "Reminder Store", "SQLite / better-sqlite3 (WAL)", "reminders, source-message snapshots, Owner settings")
 
-    Rel(actor, web, "<interaction>", "<protocol>")
-    Rel(web, api, "<calls>")
-    Rel(api, db, "<reads/writes>", "<driver>")
-    Rel(api, ext, "<emits>", "<protocol>")
+    Rel(owner, tg, "Forwards messages, taps buttons", "Telegram client")
+    Rel(tg, handler, "Delivers updates", "HTTPS long-poll")
+    Rel(handler, core, "Invokes capture / schedule / snooze / resolve")
+    Rel(handler, tg, "Sends prompts, confirmations, edits/deletes", "HTTPS")
+    Rel(scheduler, core, "Invokes fire-due-reminders")
+    Rel(core, db, "Reads / writes", "better-sqlite3")
+    Rel(core, tg, "Sends fired reminders", "HTTPS")
 ```
 
 ## 6. Runtime view
