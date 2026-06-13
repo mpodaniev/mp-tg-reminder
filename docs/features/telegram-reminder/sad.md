@@ -49,23 +49,24 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
      Never N/A — every feature inherits at least Conventions + Technical. -->
 
 **Technical.**
-- <Language + version>
-- <Framework(s) + version>
-- <Datastore(s) + version>
-- <Architecture convention — e.g. the layering style from the project convention file>
+- Мова + runtime: **Node.js 22 + TypeScript** (ADR-0001).
+- Telegram-фреймворк: **grammY** (з conversations-плагіном для діалогу «коли нагадати?») (ADR-0001).
+- Datastore: **embedded SQLite** через `better-sqlite3` — engine + binding фіксуються у §4 (стовп durability, ADR-0002).
+- Стиль архітектури: hexagonal / ports-and-adapters — встановлюється у §5 (greenfield, конвенції задаємо ми).
 
 **Organisational.**
-- <Effort budget — e.g. 3 person-weeks>
-- <Deadline — e.g. 2026-Q3 hard>
-- <Team composition>
+- Бюджет зусиль: персональний проєкт, фіксованого бюджету немає; Owner — єдиний будівник.
+- Дедлайн: не заявлено (персональний інструмент, без жорсткої дати).
+- Команда: solo (Owner у ролях Architect + Developer).
 
 **Conventions.**
-- <Link to the project's convention file>
-- <Naming, ID strategy, error-handling pattern>
+- Greenfield — окремого файлу конвенцій ще немає; базові конвенції встановлюються цим SAD (§5 layering, §8 crosscutting: logging / error-handling / ID-стратегія).
+- Naming: TypeScript-ідіоматика (camelCase для коду, snake_case для колонок SQLite); деталі error-handling — §8.
 
 **Regulatory / external.**
-- <e.g. data-retention / deletion behaviour per ADR-NNNN>
-- <e.g. applicable compliance controls, or N/A with a reason>
+- Класифікація даних: **Confidential** (spec §6.1) — особистий контент пересланих повідомлень. Single-user, без multi-tenant межі; сховище — на хості, підконтрольному Owner.
+- AuthZ: кожен вхідний update валідується проти Owner Telegram-ID до будь-якої обробки (spec §6.1) — крос-катінг у §8.
+- Режиму комплаєнсу немає (персональний інструмент, без зовнішнього authentication-surface поза Telegram-ідентичністю). Telegram — єдина зовнішня межа довіри.
 
 ## 3. Context and scope
 
