@@ -273,13 +273,19 @@ sequenceDiagram
 
 | Concept | Convention | Where defined |
 |---|---|---|
-| Logging | <e.g. structured, fields `module=<name>`> | <convention file §X or here> |
-| Authentication | <e.g. token-based via middleware> | <convention file §X> |
-| Error handling | <e.g. domain sentinel → ports error mapping → JSON> | <convention file §X> |
-| ID strategy | <e.g. sortable time-based ID in the app layer> | <convention file §X> |
-| Internationalisation | <e.g. N/A, single language> | — |
-| Observability | <e.g. tracing on the request boundary> | — |
-| Events | <module-specific patterns, if any> | <here> |
+| Logging | Структуровані JSON-логи, поля `module`, `reminder_id`, `event` (captured/scheduled/fired/resolved/expired) | тут |
+| Authorization | Перевірка єдиного Owner-ID в ingress-адаптері до будь-якого use-case; non-Owner update'и тихо відкидаються (AC-09) | тут / ports |
+| Error handling | Domain sentinel-помилки → ports error-mapping → user-facing Telegram-повідомлення; transient Telegram/network → retry з backoff | ports (ADR-0006) |
+| ID strategy | `reminder_id` = SQLite autoincrement rowid (монотонний, time-sortable), генерується в app-шарі | тут |
+| Reminder lifecycle | State-machine: `awaiting_time → pending → firing → fired → done\|deleted`; `awaiting_time → expired` (24h, DEC-6.2); `fired → pending` (snooze) | §12 |
+| Time / timezone | `scheduled_at` зберігається в UTC; wall-clock quick-picks і custom-time обчислюються в timezone Owner (`settings.timezone`); AC-13 гейтить захоплення, доки tz не задано | тут |
+| Input handling | Custom-time parser: відносний + структурований формат (DEC-6.3); date-only→09:00, time-only→next future occurrence | тут |
+| Delivery semantics | At-least-once з `delivered_at`-підтвердженням (ADR-0005); ре-фаєр `firing`-рядків після рестарту | ADR-0005 |
+| Anti-flood | Поважати Telegram 429 / flood-wait; cap ≤ 10 повідомлень / 60 с (spec §6); backoff на flood-wait | тут |
+| Message-deletion fallback | На resolve видалити fired-повідомлення; якщо > 48h delete-window — edit до empty/resolved placeholder (AC-06/07) | тут |
+| Protected-content media | Якщо media file_id невідновлюваний — фаєр text + note, усі action-кнопки лишаються (AC-12) | тут |
+| Internationalisation | <!-- N/A: одна мова (українська), один користувач --> | — |
+| Observability | Метрики + структуровані логи (без distributed tracing) | §7 |
 
 ## 9. Architecture decisions
 
