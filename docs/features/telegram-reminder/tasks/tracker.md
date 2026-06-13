@@ -13,7 +13,7 @@
 | T06 | Use cases: FireDueReminders + ExpireStalePrompts | app | Mykhailo Podaniev | M | T04 | done |
 | T07 | Use cases: SnoozeReminder + ResolveReminder | app | Mykhailo Podaniev | S | T04 | done |
 | T08 | SqliteReminderRepository + test factories | infra | Mykhailo Podaniev | M | T02, T04 | done |
-| T09 | GrammyTelegramGateway | infra | Mykhailo Podaniev | S | T04 | todo |
+| T09 | GrammyTelegramGateway | infra | Mykhailo Podaniev | S | T04 | done |
 | T10 | grammY router + capture conversation + /settings | ports | Mykhailo Podaniev | M | T05, T09 | todo |
 | T11 | Callback handlers: Snooze, Done, Delete, Go-to-source | ports | Mykhailo Podaniev | M | T07, T09 | todo |
 | T12 | In-process polling-tick scheduler worker | ports | Mykhailo Podaniev | S | T06, T09 | todo |
