@@ -4,7 +4,7 @@ owner: "Mykhailo Podaniev"
 reviewers: ["Tech Lead"]
 updated_at: "2026-06-13"
 feature_size: "M"
-target_surfaces: []  # filled in §4 — subset of: backend-service | web-frontend | mobile-app | desktop-app | cli | worker | library-sdk. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
+target_surfaces: [backend-service]  # one process hosts the update handler + an in-process scheduler container. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
 ---
 
 # Software Architecture Document — <slug>
@@ -116,11 +116,13 @@ C4Context
 
 **Top strategic choices (the seeds for ADRs):**
 
-1. **<e.g. Module isolation through events>** — <2–3 sentences citing quality goals + constraints>.
-2. **<e.g. Single-store persistence>** — <2–3 sentences>.
-3. **<e.g. Server-rendered read side>** — <2–3 sentences>.
+1. **Single-process bot service (target surface = `backend-service`)** — один Node-процес хостить і реактивний обробник update'ів, і проактивний scheduler як внутрішній компонент. Для single-user інструменту (spec §3) це мінімізує deploy/ops-поверхню і служить пріоритету «швидка доставка + персональний фіт» (spec §1). UI — це inline-клавіатури Telegram (зовнішня система), тож web/mobile-поверхонь немає. `target_surfaces: [backend-service]`.
+2. **Long-polling intake (`getUpdates`)** (ADR-0003) — бот тягне update'и від Telegram, а не виставляє публічний webhook. Не потрібен публічний домен/TLS → бот біжить за NAT і має нульову inbound attack-surface (spec §6.1). Webhook-latency несуттєва, бо домінує точність фаєрингу, а не latency інтейку.
+3. **Embedded SQLite, один файл (`better-sqlite3`)** (ADR-0002) — увесь стан нагадувань durable-зберігається в одному SQLite-файлі; durability (spec §2 Goal 3) дає WAL + синхронний fsync. Нуль зовнішньої інфраструктури — узгоджено з «мінімальний ops».
+4. **Polling-tick scheduler, store — джерело істини** (ADR-0004) — нагадування живуть у SQLite, не в in-memory таймерах; періодичний tick (~15 с) фаєрить due-рядки. Після рестарту scheduler просто продовжує tick — Goal 3 стає структурною властивістю, а не процедурою відновлення. ~15 с ≪ ±60 с (spec §6).
+5. **At-least-once доставка з підтвердженням** (ADR-0005) — перехід pending→fired фіксується лише після підтвердженої Telegram-доставки (поле `delivered_at`); рядок, що завис у `firing` після рестарту, ре-фаєриться. «No silent loss» (Goal 3) переважає «no duplicate» (spec §6.1).
 
-Each tactical decision in later sections should trace to one of these seeds. Tactical decisions that *contradict* a strategic choice are red flags — surface them in §11.
+Кожне tactical-рішення в наступних секціях трасується до одного з цих стовпів. Tactical-рішення, що *суперечать* стратегічному вибору — червоні прапорці, виносяться у §11.
 
 ## 5. Building block view
 
