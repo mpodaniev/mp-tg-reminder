@@ -252,18 +252,16 @@ sequenceDiagram
      🎯 N/A allowed for XS/S that reuses an existing deployment unit with no change.
      Deployment-diagram scaffold → templates/deployment.md. -->
 
-<Topology in 2–3 sentences. Where it runs, replicas, scaling thresholds.>
+Один Node 22-процес (бот) на одному always-on хості (малий VPS або домашній сервер). Long-polling (ADR-0003) → **нуль inbound-портів / без публічного endpoint**. Стан — один SQLite-файл на локальному диску хоста (ADR-0002); рестарт (деплой / крах / reboot) нічого не втрачає — polling-tick scheduler відновлюється зі store (ADR-0004). **Рівно одна репліка**: SQLite single-writer, а polling-tick не повинен крутитися двічі паралельно (друга репліка → подвійний фаєринг) — обмеження виведене з ADR-0002/0004.
 
 **Monitoring:**
-- <Metrics — e.g. `<metric_name>`>
-- <Alerts — e.g. «worker lag > 10 min → page on-call»>
-- <Tracing — e.g. spans on the request boundary>
+- Метрики: fire-accuracy = `fired_at − scheduled_at` на нагадування; action-latency = callback→response delta; 429 / flood-wait error rate (spec §6).
+- Availability ≥ 99% / міс (spec §6): через **push-heartbeat** — бот пінгує зовнішній uptime-монітор (UptimeRobot heartbeat або еквівалент) щохвилини; пропуск heartbeat → монітор сповіщає Owner. Push-heartbeat обрано, бо long-polling не лишає inbound-endpoint для класичного ping.
+- Tracing: <!-- N/A: single process — структуровані логи (§8) достатні замість distributed tracing -->
 
 **Scaling thresholds:**
-- <e.g. comfortable in one table up to N rows/year>
-- <e.g. partition by quarter above N rows/year>
-
-<!-- For XS/S with no deployment change: <!-- N/A: reuses existing deployment unit, no infra change --> -->
+- Single-user, single-replica за дизайном (non-goal: multi-user, spec §3) — без партиціонування.
+- Один SQLite-файл комфортно тримає роки нагадувань одного користувача; поріг масштабування не застосовний.
 
 ## 8. Crosscutting concepts
 
