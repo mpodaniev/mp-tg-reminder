@@ -8,7 +8,7 @@ export interface SnoozeReminderInput {
 }
 
 export class SnoozeReminder {
-  constructor(private readonly repo: ReminderRepository) {}
+  constructor(readonly repo: ReminderRepository) {}
 
   async execute(input: SnoozeReminderInput) {
     const reminder = await this.repo.findById(input.reminderId);
