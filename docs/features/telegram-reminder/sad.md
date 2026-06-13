@@ -191,23 +191,57 @@ C4Container
      📌 e.g. «author → web: composes draft → web → content API: save». Seed the primary flow(s) here;
      the `sequences` stage then covers every §5 AC (no cap). Never N/A for M+; XS/S keeps ≥1 happy-path flow. -->
 
-**Critical flow 1: <flow name>**
+**Critical flow 1: захоплення повідомлення та планування через quick-pick (happy path, AC-01..02)**
 
 ```mermaid
 sequenceDiagram
-    actor Actor
-    participant Web
-    participant Service
-    participant Store
-    Actor->>Web: <action>
-    Web->>Service: <call>
-    Service->>Store: <write>
-    Store-->>Service: ok
-    Service-->>Web: result
-    Web-->>Actor: confirmation
+    actor Owner
+    participant TG as Telegram Bot API
+    participant Handler as Update Handler
+    participant Core as Reminder Core
+    participant Store as Reminder Store
+    Owner->>TG: Пересилає повідомлення
+    TG->>Handler: Доставляє update
+    Handler->>Core: Валідувати Owner + захопити повідомлення
+    Core->>Store: Зберегти snapshot (awaiting_time)
+    Store-->>Core: ok
+    Core-->>Handler: Захоплено (timezone налаштований)
+    Handler->>TG: Показати "Коли нагадати?" + quick-picks
+    TG-->>Owner: Prompt з кнопками
+    Owner->>TG: Тисне quick-pick
+    TG->>Handler: Callback query
+    Handler->>Core: Запланувати на обраний час
+    Core->>Store: Оновити (pending, scheduled_at)
+    Store-->>Core: ok
+    Core-->>Handler: Заплановано
+    Handler->>TG: Підтвердити "Нагадаю …"
+    TG-->>Owner: Підтвердження
 ```
 
-**Critical flow 2: <e.g. async event propagation>** — <if applicable, otherwise N/A>.
+**Critical flow 2: фаєринг із at-least-once-відновленням (AC-04, spec §6.1)**
+
+```mermaid
+sequenceDiagram
+    participant Scheduler as Reminder Scheduler
+    participant Core as Reminder Core
+    participant Store as Reminder Store
+    participant TG as Telegram Bot API
+    actor Owner
+    Scheduler->>Core: Tick — фаєрити due-нагадування
+    Core->>Store: Вибрати due (scheduled_at<=now, state=pending)
+    Store-->>Core: Due-нагадування
+    Core->>Store: Позначити firing
+    Core->>TG: Надіслати нагадування + action-кнопки
+    alt Доставку підтверджено
+        TG-->>Owner: Спрацьоване нагадування з кнопками
+        TG-->>Core: Ack
+        Core->>Store: Позначити fired + delivered_at
+    else Крах до ack (рядок лишається firing)
+        Scheduler->>Core: Ре-фаєр на наступному tick після рестарту
+    end
+```
+
+**Двофазова обробка (lifecycle):** перед `pending` нагадування проходить фазу `awaiting_time` (захоплено, час ще не обрано). Якщо Owner не відповідає на prompt — спрацьовує expiry (DEC-6.2). Custom-time-парсинг (DEC-6.3) живить крок «Запланувати на обраний час» у Flow 1.
 
 ## 7. Deployment view
 
