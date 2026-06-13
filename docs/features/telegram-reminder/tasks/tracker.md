@@ -20,4 +20,8 @@
 | T13 | Composition root main.ts + startup wiring | wiring | Mykhailo Podaniev | S | T08, T10, T11, T12 | done |
 | T14 | Integration tests: restart durability + fire accuracy + E2E | tests | Mykhailo Podaniev | M | T13 | done |
 
-**Total:** 14 tasks, ~7–9 person-days.
+| T15 | Fix router callback parsing + quick-pick timezone + snooze_pick routing + snooze edit message | ports | Mykhailo Podaniev | M | T14 | done |
+| T16 | Custom-time conversation (AC-03/AC-08) | ports | Mykhailo Podaniev | M | T15 | done |
+| T17 | Auth-gate callbacks + timezone null + AC-12 test + durability tests | ports | Mykhailo Podaniev | S | T14 | done |
+
+**Total:** 17 tasks (14 done + 3 follow-up from review-2026-06-13).

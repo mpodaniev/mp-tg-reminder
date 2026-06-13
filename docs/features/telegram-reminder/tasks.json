@@ -205,6 +205,52 @@
         "test/integration/fire-accuracy.test.ts",
         "test/integration/e2e-capture-fire-resolve.test.ts"
       ]
+    },
+    {
+      "id": "T15",
+      "title": "Fix router callback parsing + quick-pick timezone math + snooze_pick routing + snooze edit fired message",
+      "layer": "ports",
+      "deps": ["T14"],
+      "acs": ["AC-02", "AC-05"],
+      "dod": "evening/tomorrow quick-picks schedule in Owner timezone; snooze_pick routed; after snooze the original fired-reminder message is edited; all port handler unit tests green",
+      "files_hint": [
+        "src/ports/router.ts",
+        "src/ports/handlers/snooze-handler.ts",
+        "src/ports/handlers/snooze-handler.test.ts",
+        "src/ports/conversations/capture-conversation.ts",
+        "src/ports/conversations/capture-conversation.test.ts",
+        "src/ports/tz-utils.ts"
+      ]
+    },
+    {
+      "id": "T16",
+      "title": "Custom-time conversation: in-memory state for capture + snooze custom pick (AC-03/AC-08)",
+      "layer": "ports",
+      "deps": ["T15"],
+      "acs": ["AC-03", "AC-08"],
+      "dod": "Custom-time tapped → bot asks for text; valid future time schedules reminder; past time rejected with message; router routes text to pending-custom handler",
+      "files_hint": [
+        "src/ports/conversations/custom-time-conversation.ts",
+        "src/ports/conversations/custom-time-conversation.test.ts",
+        "src/ports/router.ts"
+      ]
+    },
+    {
+      "id": "T17",
+      "title": "Auth-gate callbacks + timezone null init + AC-12 test + fix tautological delivered_at tests",
+      "layer": "ports",
+      "deps": ["T14"],
+      "acs": ["AC-09", "AC-12"],
+      "dod": "Non-Owner callback silently ignored; main.ts stores null timezone; gateway test asserts protected-media note; delivered_at tests exercise actual idempotency guard",
+      "files_hint": [
+        "src/ports/router.ts",
+        "src/ports/middleware/auth-middleware.ts",
+        "src/main.ts",
+        "src/app/ports/reminder-repository.ts",
+        "src/infra/db/sqlite-reminder-repository.ts",
+        "src/infra/telegram/grammy-telegram-gateway.test.ts",
+        "test/integration/durability.test.ts"
+      ]
     }
   ]
 }
