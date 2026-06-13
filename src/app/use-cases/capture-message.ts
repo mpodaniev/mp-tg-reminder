@@ -12,7 +12,7 @@ export interface CaptureMessageInput {
 }
 
 export class CaptureMessage {
-  constructor(private readonly repo: ReminderRepository) {}
+  constructor(readonly repo: ReminderRepository) {}
 
   async execute(input: CaptureMessageInput): Promise<Reminder> {
     const settings = await this.repo.getOwnerSettings();
