@@ -60,7 +60,7 @@ function makeSnapshot(id: number): SourceSnapshot {
 }
 
 describe("Durability: restart simulation", () => {
-  it("firing-state reminder is re-fired after simulated crash (ADR-0005)", async () => {
+  it("firing-state reminder is re-fired after simulated crash (ADR-0005 at-least-once)", async () => {
     const snapshotData = {
       chatId: 100,
       messageId: 300,
@@ -76,7 +76,7 @@ describe("Durability: restart simulation", () => {
     const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
     const saved = await repo.saveWithSnapshot(snapshotData, r);
 
-    // Manually set to firing (simulates crash mid-fire)
+    // Simulates crash mid-fire: state stuck at 'firing', delivery not confirmed
     db.prepare("UPDATE reminders SET state='firing', scheduled_at=? WHERE id=?")
       .run(Date.now() - 1000, saved.id);
 
@@ -91,7 +91,12 @@ describe("Durability: restart simulation", () => {
     expect(gateway.sendReminder).toHaveBeenCalledOnce();
   });
 
-  it("already-fired reminder (delivered_at set) is not re-fired", async () => {
+  it("state='fired' reminder is excluded by state filter — not re-selected for firing (ADR-0005)", async () => {
+    // NOTE: Suppression here is purely state-machine-based.
+    // findDuePending selects state='pending'; findFiring selects state='firing'.
+    // A state='fired' row is never returned by either query, so it is never re-sent.
+    // There is NO separate delivered_at guard in FireDueReminders (at-least-once semantics:
+    // a crash between Telegram ack and state update causes exactly-once violation — accepted debt, §6.1).
     const snapshotData = {
       chatId: 101,
       messageId: 301,
@@ -116,6 +121,43 @@ describe("Durability: restart simulation", () => {
 
     await fireUC.execute();
 
+    // Verified: state='fired' rows are excluded by findDuePending and findFiring queries
     expect(gateway.sendReminder).not.toHaveBeenCalled();
+  });
+
+  it("firing-state reminder with delivered_at set is re-sent (at-least-once: crash after Telegram ack, before state update)", async () => {
+    // This demonstrates the real at-least-once edge case: if the service crashed
+    // after Telegram confirmed delivery but before repo.update(fired) committed,
+    // the reminder stays 'firing' and IS re-fired on next startup.
+    // This is the accepted trade-off (§6.1) — no silent loss, possible duplicate.
+    const snapshotData = {
+      chatId: 102,
+      messageId: 302,
+      chatUsername: null,
+      senderName: null,
+      senderUsername: null,
+      messageText: "at-least-once crash",
+      mediaFileId: null,
+      mediaType: null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
+    const saved = await repo.saveWithSnapshot(snapshotData, r);
+
+    // Simulate: firing + delivered_at already set (Telegram ack received before crash)
+    db.prepare(
+      "UPDATE reminders SET state='firing', scheduled_at=?, delivered_at=? WHERE id=?"
+    ).run(Date.now() - 1000, Date.now() - 500, saved.id);
+
+    const gateway = makeFakeGateway();
+    const fireUC = new FireDueReminders(repo, gateway, OWNER_CHAT_ID);
+
+    await fireUC.execute();
+
+    // Re-sends because 'firing' state is picked up by findFiring (no delivered_at guard)
+    expect(gateway.sendReminder).toHaveBeenCalledOnce();
+    const updated = await repo.findById(saved.id!);
+    expect(updated!.state).toBe("fired");
   });
 });

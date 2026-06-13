@@ -30,7 +30,7 @@ const repo = new SqliteReminderRepository(db);
 // Bootstrap owner settings if not present
 const existing = await repo.getOwnerSettings();
 if (!existing) {
-  await repo.upsertOwnerSettings(OWNER_TELEGRAM_ID, "");
+  await repo.upsertOwnerSettings(OWNER_TELEGRAM_ID, null);
 }
 
 const bot = new Bot(BOT_TOKEN);

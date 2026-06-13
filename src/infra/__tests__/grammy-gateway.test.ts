@@ -4,7 +4,7 @@ import { Reminder } from "../../domain/reminder.js";
 import type { SourceSnapshot } from "../../domain/value-objects/source-snapshot.js";
 import { TelegramDeleteWindowError } from "../../app/ports/telegram-gateway.js";
 
-function makeSnapshot(): SourceSnapshot {
+function makeSnapshot(overrides: Partial<SourceSnapshot> = {}): SourceSnapshot {
   return {
     id: 1,
     chatId: 100,
@@ -17,13 +17,14 @@ function makeSnapshot(): SourceSnapshot {
     mediaType: null,
     isMediaProtected: false,
     createdAt: Date.now(),
+    ...overrides,
   };
 }
 
-function makeFiredReminder(): Reminder {
+function makeFiredReminder(snapshotOverrides: Partial<SourceSnapshot> = {}): Reminder {
   return Reminder.reconstitute({
     id: 1,
-    snapshot: makeSnapshot(),
+    snapshot: makeSnapshot(snapshotOverrides),
     state: "fired",
     scheduledAt: Date.now() - 1000,
     firedAt: Date.now() - 500,
@@ -61,6 +62,30 @@ describe("GrammyTelegramGateway", () => {
     expect(callbackDatas.some((d: string) => d.includes("delete"))).toBe(true);
     expect(callbackDatas.some((d: string) => d.includes("source"))).toBe(true);
     expect(result.messageId).toBe(99);
+  });
+
+  it("sendReminder with protected media includes restriction note and all 4 buttons (AC-12)", async () => {
+    const reminder = makeFiredReminder({ isMediaProtected: true, messageText: "Secret note" });
+    await gateway.sendReminder(777, reminder);
+
+    const [_chatId, text, opts] = mockApi.sendMessage.mock.calls[0];
+    expect(text).toContain("Secret note");
+    expect(text).toMatch(/unavailable.*restriction|restriction.*unavailable/i);
+    const buttons = opts.reply_markup.inline_keyboard.flat();
+    expect(buttons.length).toBe(4);
+    const datas = buttons.map((b: any) => b.callback_data);
+    expect(datas.some((d: string) => d.includes("snooze"))).toBe(true);
+    expect(datas.some((d: string) => d.includes("done"))).toBe(true);
+    expect(datas.some((d: string) => d.includes("delete"))).toBe(true);
+    expect(datas.some((d: string) => d.includes("source"))).toBe(true);
+  });
+
+  it("sendReminder with no text and protected media uses fallback text + note (AC-12)", async () => {
+    const reminder = makeFiredReminder({ isMediaProtected: true, messageText: null });
+    await gateway.sendReminder(777, reminder);
+
+    const [_chatId, text] = mockApi.sendMessage.mock.calls[0];
+    expect(text).toMatch(/unavailable.*restriction|restriction.*unavailable/i);
   });
 
   it("deleteMessage calls api.deleteMessage", async () => {

@@ -45,6 +45,11 @@ export function buildRouter(
       }
 
       if (ctx.callbackQuery) {
+        const callbackSenderId: number | undefined = ctx.from?.id;
+        if (callbackSenderId !== ownerChatId) {
+          return;
+        }
+
         const data: string = ctx.callbackQuery.data ?? "";
         const parts = data.split(":");
         const action = parts[0];

@@ -159,7 +159,7 @@ export class SqliteReminderRepository implements ReminderRepository {
     return ownerSettingsRowToVO(row);
   }
 
-  async upsertOwnerSettings(ownerTelegramId: number, timezone: string): Promise<void> {
+  async upsertOwnerSettings(ownerTelegramId: number, timezone: string | null): Promise<void> {
     const now = Date.now();
     this.db
       .prepare(

@@ -28,6 +28,6 @@ export interface ReminderRepository {
 
   upsertOwnerSettings(
     ownerTelegramId: number,
-    timezone: string
+    timezone: string | null
   ): Promise<void>;
 }
