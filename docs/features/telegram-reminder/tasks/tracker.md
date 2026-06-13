@@ -5,7 +5,7 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T01 | Project scaffold | wiring | Mykhailo Podaniev | S | — | todo |
+| T01 | Project scaffold | wiring | Mykhailo Podaniev | S | — | done |
 | T02 | Promote staged migrations + migration runner | migration | Mykhailo Podaniev | S | T01 | todo |
 | T03 | Reminder entity + state machine + value objects + errors | domain | Mykhailo Podaniev | M | T01 | todo |
 | T04 | Port interfaces: ReminderRepository + TelegramGateway | app | Mykhailo Podaniev | S | T03 | todo |

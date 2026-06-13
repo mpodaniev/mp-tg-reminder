@@ -40,6 +40,9 @@ htmlcov/
 tmp/
 temp/
 
+# Data directory (SQLite DB)
+data/
+
 # Logs
 *.log
 npm-debug.log*
