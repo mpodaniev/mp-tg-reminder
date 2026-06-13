@@ -296,10 +296,14 @@ sequenceDiagram
 
 | # | Title | Status | Section |
 |---|---|---|---|
-| <NNNN> | <imperative — e.g. "Use a sliding-window counter for rate limiting"> | Accepted | §<N> |
-| <NNNN> | <imperative — e.g. "Co-locate the worker in the API process"> | Accepted | §<N> |
+| 0001 | Use Node.js + TypeScript + grammY for the bot runtime | Accepted | §2 |
+| 0002 | Use an embedded single-file SQLite store | Accepted | §4 |
+| 0003 | Use long-polling (getUpdates) for Telegram intake | Accepted | §4 |
+| 0004 | Fire reminders with a polling-tick scheduler over the store | Accepted | §4 |
+| 0005 | Deliver fired reminders at-least-once with a confirmation flag | Accepted | §4 |
+| 0006 | Structure the bot as ports-and-adapters (hexagonal) | Accepted | §5 |
 
-ADR files live under `docs/features/<slug>/adr/NNNN-<title>.md`.
+ADR files live under `docs/features/telegram-reminder/adr/NNNN-<title>.md`.
 
 ## 10. Quality requirements
 
@@ -310,22 +314,32 @@ ADR files live under `docs/features/<slug>/adr/NNNN-<title>.md`.
      round ≤250ms to ≤300ms — that's a critic F6 hit).
      📌 e.g. «p95 ≤ 500 ms on a block update, verified by a 100 req/s load test». -->
 
-Each top-3 goal from §1 expanded into a full scenario:
+Top-3 quality goals з §1 (+ 2 підтримувальні NFR) розгорнуті у повні сценарії. Числа й методи вимірювання — verbatim зі spec §6.
 
-**QG-1. <quality attribute>**
-- **When:** <trigger condition>
-- **Then:** <expected behaviour with numbers from spec §6 NFR>
-- **How verify:** <test / chaos drill / load test / metric>
+**QG-1. Durability / відновлюваність**
+- **When:** сервіс рестартує (деплой / крах / reboot), маючи pending-нагадування.
+- **Then:** zero pending reminders silently lost across service restart.
+- **How verify:** integration test — schedule reminder, restart service, confirm it fires.
 
-**QG-2. <quality attribute>**
-- **When:** <trigger>
-- **Then:** <expected>
-- **How verify:** <how>
+**QG-2. Точність спрацювання**
+- **When:** pending-нагадування досягає свого scheduled-часу.
+- **Then:** fires within ±60 s of scheduled time.
+- **How verify:** diff between `scheduled_at` and `fired_at` logged per reminder.
 
-**QG-3. <quality attribute>**
-- **When:** <trigger>
-- **Then:** <expected>
-- **How verify:** <how>
+**QG-3. Latency дії**
+- **When:** Owner тисне inline-action-кнопку (Snooze / Done / Delete / Go to source).
+- **Then:** ≤ 2 s from button tap to bot response (p95).
+- **How verify:** bot-side timestamp delta logged per callback.
+
+**QG-4. Availability (підтримувальна)**
+- **When:** безперервна робота протягом календарного місяця.
+- **Then:** ≥ 99% monthly uptime.
+- **How verify:** external uptime monitor (UptimeRobot or equivalent) через push-heartbeat (§7).
+
+**QG-5. Anti-flood (підтримувальна)**
+- **When:** бот формує кілька вихідних повідомлень у короткому вікні.
+- **Then:** no more than 10 bot messages sent within any 60-second window.
+- **How verify:** 429 / flood-wait error rate in bot logs.
 
 ## 11. Risks and technical debt
 
