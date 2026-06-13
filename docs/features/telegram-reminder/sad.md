@@ -21,21 +21,22 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
      ¶4 is the override slot — critic `Override` resolutions emit «Decision override: <headline>
      — rationale: <reason>» bullets here so downstream skills see the deliberate choice. -->
 
-**Intent.** <One paragraph from spec §2 Goals — what we're building and for whom.>
+**Intent.** Персональний Telegram-бот, прив'язаний до одного акаунта (Owner). Owner пересилає боту будь-яке повідомлення з інших чатів; бот питає «коли нагадати?» (quick-pick або довільний час), durable-зберігає нагадування і повертає його у призначений час з inline-кнопками (Snooze / Done / Delete / Go to source). Owner є водночас єдиним користувачем і будівником, тому швидкість доставки та персональна зручність важливіші за багатокористувацьку розширюваність (spec §1, §2).
 
 **Top-3 quality goals (1-liners; full scenarios in §10):**
 
-1. <e.g. "Availability under partial failure of a downstream module">
-2. <e.g. "Read performance for the dashboard under data-scale growth">
-3. <e.g. "Recoverability with <30 min RTO">
+1. **Durability / відновлюваність** — жодне pending-нагадування не втрачається через рестарт сервісу (spec §2 Goal 3 — абсолютна вимога, без числового допуску).
+2. **Точність спрацювання** — нагадування фаєриться в межах ±60 с від призначеного часу (spec §6).
+3. **Чутливість (latency)** — відповідь на натискання inline-кнопки p95 ≤ 2 с; захоплення пересланого повідомлення < 10 с (spec §6, §2).
+
+(Availability ≥ 99% / місяць та anti-flood ≤ 10 повідомлень / 60 с — підтримувальні NFR, повний розбір у §10.)
 
 **Stakeholders.**
 
 | Role | Interest | Sign-off owner? |
 |---|---|---|
-| <author role from glossary> | <feature usage> | No |
-| <consumer role from glossary> | <read usage> | No |
-| Tech Lead | SAD approval | Yes |
+| Owner | Єдиний користувач — захоплює й отримує нагадування; він же будівник системи | No |
+| Tech Lead | Затвердження SAD | Yes |
 
 <!-- Decision overrides (¶4) — populated by the critic resolution loop, empty otherwise. -->
 
