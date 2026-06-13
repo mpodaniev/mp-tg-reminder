@@ -10,7 +10,7 @@
 | T03 | Reminder entity + state machine + value objects + errors | domain | Mykhailo Podaniev | M | T01 | done |
 | T04 | Port interfaces: ReminderRepository + TelegramGateway | app | Mykhailo Podaniev | S | T03 | done |
 | T05 | Use cases: CaptureMessage + ScheduleReminder | app | Mykhailo Podaniev | M | T04 | done |
-| T06 | Use cases: FireDueReminders + ExpireStalePrompts | app | Mykhailo Podaniev | M | T04 | todo |
+| T06 | Use cases: FireDueReminders + ExpireStalePrompts | app | Mykhailo Podaniev | M | T04 | done |
 | T07 | Use cases: SnoozeReminder + ResolveReminder | app | Mykhailo Podaniev | S | T04 | todo |
 | T08 | SqliteReminderRepository + test factories | infra | Mykhailo Podaniev | M | T02, T04 | todo |
 | T09 | GrammyTelegramGateway | infra | Mykhailo Podaniev | S | T04 | todo |
