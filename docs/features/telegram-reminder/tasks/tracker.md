@@ -17,7 +17,7 @@
 | T10 | grammY router + capture conversation + /settings | ports | Mykhailo Podaniev | M | T05, T09 | done |
 | T11 | Callback handlers: Snooze, Done, Delete, Go-to-source | ports | Mykhailo Podaniev | M | T07, T09 | done |
 | T12 | In-process polling-tick scheduler worker | ports | Mykhailo Podaniev | S | T06, T09 | done |
-| T13 | Composition root main.ts + startup wiring | wiring | Mykhailo Podaniev | S | T08, T10, T11, T12 | todo |
+| T13 | Composition root main.ts + startup wiring | wiring | Mykhailo Podaniev | S | T08, T10, T11, T12 | done |
 | T14 | Integration tests: restart durability + fire accuracy + E2E | tests | Mykhailo Podaniev | M | T13 | todo |
 
 **Total:** 14 tasks, ~7–9 person-days.
