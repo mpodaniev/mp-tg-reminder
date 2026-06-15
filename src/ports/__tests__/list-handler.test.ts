@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handleList } from "../handlers/list-handler.js";
+import { handleList, handleListCancel } from "../handlers/list-handler.js";
+import { handleSource } from "../handlers/source-handler.js";
 import { ListActiveReminders } from "../../app/use-cases/list-active-reminders.js";
+import { CancelPendingReminder } from "../../app/use-cases/cancel-pending-reminder.js";
 import { InMemoryReminderRepository } from "../../app/use-cases/__tests__/helpers/in-memory-repo.js";
 import { Reminder } from "../../domain/reminder.js";
+import type { ReminderState } from "../../domain/state-machine.js";
+import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import type { SourceSnapshot } from "../../domain/value-objects/source-snapshot.js";
 
 const OWNER_ID = 123456789;
@@ -94,5 +98,105 @@ describe("handleList — /list command handler (T6)", () => {
     await handleList(ctx as any, repo, listUC);
 
     expect(ctx.reply).not.toHaveBeenCalled();
+  });
+});
+
+function makeCallbackCtx() {
+  return {
+    answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+    reply: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function makeGateway(): TelegramGateway {
+  return {
+    sendReminder: vi.fn().mockResolvedValue({ messageId: 1 }),
+    deleteMessage: vi.fn().mockResolvedValue(undefined),
+    editMessageToPlaceholder: vi.fn().mockResolvedValue(undefined),
+    answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+    sendMessage: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+describe("handleListCancel — cancel callback (T7, AC-03/AC-04)", () => {
+  let repo: InMemoryReminderRepository;
+  let cancelUC: CancelPendingReminder;
+
+  beforeEach(() => {
+    repo = new InMemoryReminderRepository(OWNER_ID, TZ);
+    cancelUC = new CancelPendingReminder(repo);
+  });
+
+  it("cancels a pending reminder and confirms in a separate message (AC-03)", async () => {
+    repo.reminders.set(1, pending(1, Date.now() + 60_000, "doomed"));
+    const ctx = makeCallbackCtx();
+
+    await handleListCancel(ctx as any, cancelUC, 1);
+
+    expect((await repo.findById(1))!.state).toBe("deleted");
+    expect(ctx.answerCallbackQuery).toHaveBeenCalled();
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const [text] = ctx.reply.mock.calls[0]!;
+    expect(text.toLowerCase()).toMatch(/скасован/);
+  });
+
+  it.each<ReminderState>(["firing", "fired", "done", "deleted", "expired"])(
+    "shows the uniform no-longer-active no-op for non-pending state '%s' with no state change (AC-04)",
+    async (state) => {
+      const r = Reminder.reconstitute({ id: 2, snapshot: snapshot(2, "stale"), state });
+      repo.reminders.set(2, r);
+      const ctx = makeCallbackCtx();
+
+      await handleListCancel(ctx as any, cancelUC, 2);
+
+      expect((await repo.findById(2))!.state).toBe(state);
+      expect(ctx.answerCallbackQuery).toHaveBeenCalled();
+      expect(ctx.reply).toHaveBeenCalledTimes(1);
+      const [text] = ctx.reply.mock.calls[0]!;
+      expect(text.toLowerCase()).toMatch(/більше не активне/);
+    }
+  );
+
+  it("the uniform no-op message is identical for every non-pending end state (AC-04)", async () => {
+    const messages: string[] = [];
+    for (const state of ["firing", "fired", "done", "deleted", "expired"] as ReminderState[]) {
+      repo.reminders.set(3, Reminder.reconstitute({ id: 3, snapshot: snapshot(3, "x"), state }));
+      const ctx = makeCallbackCtx();
+      await handleListCancel(ctx as any, cancelUC, 3);
+      messages.push(ctx.reply.mock.calls[0]![0]);
+    }
+    expect(new Set(messages).size).toBe(1);
+  });
+});
+
+describe("go-to-source from the list reuses the fired-reminder fallback (T7, AC-06)", () => {
+  let repo: InMemoryReminderRepository;
+
+  beforeEach(() => {
+    repo = new InMemoryReminderRepository(OWNER_ID, TZ);
+  });
+
+  it("sends a deep link when the source chat has a public username", async () => {
+    const snap: SourceSnapshot = { ...snapshot(1, "linkable"), chatUsername: "publicchat", messageId: 555 };
+    repo.reminders.set(1, Reminder.reconstitute({ id: 1, snapshot: snap, state: "pending", scheduledAt: Date.now() + 1000 }));
+    const gateway = makeGateway();
+    const ctx = makeCallbackCtx();
+
+    await handleSource(ctx as any, repo, gateway, 1, OWNER_ID);
+
+    const [, text] = (gateway.sendMessage as any).mock.calls[0];
+    expect(text).toContain("t.me/publicchat/555");
+  });
+
+  it("falls back to inline content when there is no public username (AC-06)", async () => {
+    const snap: SourceSnapshot = { ...snapshot(2, "private body"), chatUsername: null };
+    repo.reminders.set(2, Reminder.reconstitute({ id: 2, snapshot: snap, state: "pending", scheduledAt: Date.now() + 1000 }));
+    const gateway = makeGateway();
+    const ctx = makeCallbackCtx();
+
+    await handleSource(ctx as any, repo, gateway, 2, OWNER_ID);
+
+    const [, text] = (gateway.sendMessage as any).mock.calls[0];
+    expect(text).toContain("private body");
   });
 });

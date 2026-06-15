@@ -3,6 +3,8 @@ import type {
   ListActiveReminders,
   ActiveListViewModel,
 } from "../../app/use-cases/list-active-reminders.js";
+import type { CancelPendingReminder } from "../../app/use-cases/cancel-pending-reminder.js";
+import { InvalidStateTransitionError } from "../../domain/errors.js";
 import { isOwner } from "../middleware/auth-middleware.js";
 import { LIST_CALLBACK } from "../dto/index.js";
 
@@ -11,7 +13,16 @@ type MinimalCtx = {
   reply: (text: string, opts?: any) => Promise<any>;
 };
 
+type MinimalCallbackCtx = {
+  answerCallbackQuery: (text?: string) => Promise<any>;
+  reply: (text: string, opts?: any) => Promise<any>;
+};
+
 const EMPTY_MESSAGE = "📭 Немає активних нагадувань.";
+const CANCEL_CONFIRM_MESSAGE = "✅ Нагадування скасовано.";
+// Uniform reply for every non-pending end state — the list is a point-in-time
+// snapshot, so a tap on an entry that has since changed state is a safe no-op (AC-04).
+const NOT_ACTIVE_MESSAGE = "⚠️ Це нагадування більше не активне.";
 
 function formatFireTime(scheduledAtMs: number, timezone: string): string {
   return new Intl.DateTimeFormat("uk", {
@@ -72,4 +83,29 @@ export async function handleList(
   const { text, inlineKeyboard } = renderListMessage(vm, timezone);
 
   await ctx.reply(text, { reply_markup: { inline_keyboard: inlineKeyboard } });
+}
+
+/**
+ * Cancel callback from the Active list. On success the reminder moves
+ * pending→deleted and the Owner is confirmed in a separate message; the rendered
+ * list message is never edited (immutable snapshot, ADR-0002). A tap on a
+ * reminder that is no longer pending surfaces the uniform no-op (AC-03 / AC-04).
+ */
+export async function handleListCancel(
+  ctx: MinimalCallbackCtx,
+  cancelUC: CancelPendingReminder,
+  reminderId: number
+): Promise<void> {
+  try {
+    await cancelUC.execute({ reminderId });
+    await ctx.answerCallbackQuery();
+    await ctx.reply(CANCEL_CONFIRM_MESSAGE);
+  } catch (err) {
+    if (err instanceof InvalidStateTransitionError) {
+      await ctx.answerCallbackQuery();
+      await ctx.reply(NOT_ACTIVE_MESSAGE);
+      return;
+    }
+    throw err;
+  }
 }
