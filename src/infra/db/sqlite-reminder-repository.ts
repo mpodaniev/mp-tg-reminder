@@ -105,8 +105,21 @@ export class SqliteReminderRepository implements ReminderRepository {
   }
 
   async findActivePendingOrdered(): Promise<Reminder[]> {
-    // Implemented in T3 (real index-backed query). Stubbed so the port compiles.
-    throw new Error("findActivePendingOrdered not implemented yet");
+    // state='pending' ORDER BY scheduled_at uses idx_reminders_state_scheduled_at;
+    // id asc tie-breaks equal fire times by capture order (AC-01).
+    const rows = this.db
+      .prepare(
+        `SELECT r.*, s.id as s_id, s.chat_id, s.message_id, s.chat_username,
+                s.sender_name, s.sender_username, s.message_text, s.media_file_id,
+                s.media_type, s.is_media_protected, s.created_at as s_created_at
+         FROM reminders r
+         JOIN source_snapshots s ON s.id = r.snapshot_id
+         WHERE r.state = 'pending'
+         ORDER BY r.scheduled_at ASC, r.id ASC`
+      )
+      .all() as any[];
+
+    return rows.map((row) => rowToReminder(row, this.extractSnapshot(row)));
   }
 
   async findFiring(): Promise<Reminder[]> {
