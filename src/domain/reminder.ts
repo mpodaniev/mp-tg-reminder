@@ -98,6 +98,10 @@ export class Reminder {
     this._state = transition(this._state, "resolve_delete");
   }
 
+  cancel(): void {
+    this._state = transition(this._state, "cancel");
+  }
+
   isResolved(): boolean {
     return this._state === "done" || this._state === "deleted";
   }

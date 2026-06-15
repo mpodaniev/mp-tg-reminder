@@ -9,6 +9,9 @@ import { handleSettings } from "./handlers/settings-handler.js";
 import { handleSnooze, handleSnoozePick } from "./handlers/snooze-handler.js";
 import { handleResolve } from "./handlers/resolve-handler.js";
 import { handleSource } from "./handlers/source-handler.js";
+import { handleList, handleListCancel } from "./handlers/list-handler.js";
+import { ListActiveReminders } from "../app/use-cases/list-active-reminders.js";
+import { CancelPendingReminder } from "../app/use-cases/cancel-pending-reminder.js";
 import { localTodayAt } from "./tz-utils.js";
 import { AlreadyResolvedError } from "../domain/errors.js";
 
@@ -24,6 +27,8 @@ export function buildRouter(
   const scheduleUC = new ScheduleReminder(repo);
   const snoozeUC = new SnoozeReminder(repo);
   const resolveUC = new ResolveReminder(repo);
+  const listUC = new ListActiveReminders(repo);
+  const cancelUC = new CancelPendingReminder(repo);
 
   return {
     pendingCustom,
@@ -33,6 +38,10 @@ export function buildRouter(
 
       if (msg?.text?.startsWith("/settings")) {
         return handleSettings(ctx, repo);
+      }
+
+      if (msg?.text?.startsWith("/list")) {
+        return handleList(ctx, repo, listUC);
       }
 
       if (msg?.forward_origin || msg?.forward_date || msg?.forward_from || msg?.forward_from_chat) {
@@ -71,6 +80,9 @@ export function buildRouter(
         }
         if (action === "done" || action === "delete") {
           return handleResolve(ctx, resolveUC, gateway, reminderId, action as "done" | "delete", ownerChatId);
+        }
+        if (action === "cancel") {
+          return handleListCancel(ctx, cancelUC, reminderId);
         }
         if (action === "source") {
           return handleSource(ctx, repo, gateway, reminderId, ownerChatId);

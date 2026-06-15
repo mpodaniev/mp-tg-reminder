@@ -52,6 +52,13 @@ const expireUC = new ExpireStalePrompts(repo);
 const scheduler = new Scheduler(fireUC, expireUC, SCHEDULER_INTERVAL_MS, 24 * 60 * 60 * 1000);
 const router = buildRouter(repo, gateway, OWNER_CHAT_ID);
 
+// Register the /list command in the Telegram command menu, scoped to the Owner's
+// chat so it is never offered to other users (owner-only posture, AC-05/AC-07).
+await bot.api.setMyCommands(
+  [{ command: "list", description: "Активні нагадування" }],
+  { scope: { type: "chat", chat_id: OWNER_CHAT_ID } }
+);
+
 bot.on("message", async (ctx) => {
   await router.handleUpdate(ctx);
 });

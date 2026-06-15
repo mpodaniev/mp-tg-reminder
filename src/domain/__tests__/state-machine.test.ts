@@ -58,3 +58,22 @@ describe("state machine transitions", () => {
     );
   });
 });
+
+describe("cancel transition (list-active-reminders T1, AC-03/AC-04)", () => {
+  it("pending → deleted (cancel)", () => {
+    expect(transition("pending", "cancel")).toBe("deleted");
+  });
+
+  it.each<ReminderState>([
+    "awaiting_time",
+    "firing",
+    "fired",
+    "done",
+    "deleted",
+    "expired",
+  ])("cancel from non-pending state '%s' throws the invalid-transition sentinel", (state) => {
+    expect(() => transition(state, "cancel")).toThrow(
+      InvalidStateTransitionError
+    );
+  });
+});

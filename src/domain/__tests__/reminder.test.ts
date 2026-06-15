@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Reminder } from "../reminder.js";
 import { ScheduledTime } from "../value-objects/scheduled-time.js";
+import { InvalidStateTransitionError } from "../errors.js";
+import type { ReminderState } from "../state-machine.js";
 
 function makeSnapshot() {
   return {
@@ -43,6 +45,22 @@ describe("Reminder entity", () => {
     expect(r.state).toBe("pending");
     expect(r.scheduledAt).toBe(newTime);
   });
+
+  it("cancel transitions a pending reminder to deleted (AC-03)", () => {
+    const r = Reminder.create({ snapshot: makeSnapshot() });
+    r.schedule(ScheduledTime.from(Date.now() + 60_000));
+    r.cancel();
+    expect(r.state).toBe("deleted");
+  });
+
+  it.each<ReminderState>(["firing", "fired", "done", "deleted", "expired"])(
+    "cancel throws the invalid-transition sentinel from non-pending state '%s' (AC-04)",
+    (state) => {
+      const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state });
+      expect(() => r.cancel()).toThrow(InvalidStateTransitionError);
+      expect(r.state).toBe(state);
+    }
+  );
 
   it("has no imports from infra (domain purity check via module resolution)", () => {
     // This test is structural: if the import above fails, the test suite fails.

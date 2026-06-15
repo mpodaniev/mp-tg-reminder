@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -131,5 +131,78 @@ describe("SqliteReminderRepository", () => {
     expect(settings).not.toBeNull();
     expect(settings!.ownerTelegramId).toBe(123456789);
     expect(settings!.timezone).toBe("Europe/Kyiv");
+  });
+});
+
+describe("SqliteReminderRepository.findActivePendingOrdered (T3, AC-01)", () => {
+  let memDb: Database.Database;
+  let memRepo: SqliteReminderRepository;
+
+  function seedReminder(state: string, scheduledAt: number | null): number {
+    const snapId = memDb
+      .prepare(
+        `INSERT INTO source_snapshots
+         (chat_id, message_id, chat_username, sender_name, sender_username,
+          message_text, media_file_id, media_type, is_media_protected, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(100, 200, null, null, null, "text", null, null, 0, 1000)
+      .lastInsertRowid as number;
+    return memDb
+      .prepare(
+        `INSERT INTO reminders (snapshot_id, state, scheduled_at, fired_at, delivered_at, fired_message_id, created_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, ?)`
+      )
+      .run(snapId, state, scheduledAt, 1000)
+      .lastInsertRowid as number;
+  }
+
+  beforeEach(() => {
+    memDb = new Database(":memory:");
+    memDb.pragma("foreign_keys = ON");
+    runMigrationsUp(memDb);
+    memRepo = new SqliteReminderRepository(memDb);
+  });
+
+  afterEach(() => memDb.close());
+
+  it("returns only pending reminders ordered by scheduled_at ascending", async () => {
+    const c = seedReminder("pending", 3000);
+    const a = seedReminder("pending", 1000);
+    const b = seedReminder("pending", 2000);
+    seedReminder("fired", 1500);
+    seedReminder("deleted", 500);
+
+    const result = await memRepo.findActivePendingOrdered();
+
+    expect(result.map((r) => r.id)).toEqual([a, b, c]);
+    expect(result.every((r) => r.state === "pending")).toBe(true);
+  });
+
+  it("tie-breaks equal scheduled_at by capture order (id ascending)", async () => {
+    const first = seedReminder("pending", 5000);
+    const second = seedReminder("pending", 5000);
+    const third = seedReminder("pending", 5000);
+
+    const result = await memRepo.findActivePendingOrdered();
+
+    expect(result.map((r) => r.id)).toEqual([first, second, third]);
+  });
+
+  it("returns an empty array when there are no pending reminders", async () => {
+    seedReminder("fired", 1000);
+    expect(await memRepo.findActivePendingOrdered()).toEqual([]);
+  });
+
+  it("uses idx_reminders_state_scheduled_at for the read", () => {
+    seedReminder("pending", 1000);
+    const plan = memDb
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT r.* FROM reminders r WHERE r.state = 'pending' ORDER BY r.scheduled_at ASC, r.id ASC`
+      )
+      .all() as Array<{ detail: string }>;
+    const detail = plan.map((p) => p.detail).join(" ");
+    expect(detail).toContain("idx_reminders_state_scheduled_at");
   });
 });
