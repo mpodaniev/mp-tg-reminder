@@ -121,6 +121,9 @@ function makeCallbackCtx() {
   return {
     answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
     reply: vi.fn().mockResolvedValue(undefined),
+    // exposed so a regression that starts editing the rendered list message
+    // (violating the ADR-0002 immutable snapshot) is caught.
+    editMessageText: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -154,6 +157,9 @@ describe("handleListCancel — cancel callback (T7, AC-03/AC-04)", () => {
     expect(ctx.reply).toHaveBeenCalledTimes(1);
     const [text] = ctx.reply.mock.calls[0]!;
     expect(text.toLowerCase()).toMatch(/скасован/);
+    // the rendered list message is a frozen point-in-time snapshot — confirm
+    // the cancel path never edits it (ADR-0002 / AC-03).
+    expect(ctx.editMessageText).not.toHaveBeenCalled();
   });
 
   it.each<ReminderState>(["firing", "fired", "done", "deleted", "expired"])(
