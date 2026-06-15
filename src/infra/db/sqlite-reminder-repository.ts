@@ -104,6 +104,11 @@ export class SqliteReminderRepository implements ReminderRepository {
     return rows.map((row) => rowToReminder(row, this.extractSnapshot(row)));
   }
 
+  async findActivePendingOrdered(): Promise<Reminder[]> {
+    // Implemented in T3 (real index-backed query). Stubbed so the port compiles.
+    throw new Error("findActivePendingOrdered not implemented yet");
+  }
+
   async findFiring(): Promise<Reminder[]> {
     const rows = this.db
       .prepare(
