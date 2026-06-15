@@ -32,7 +32,7 @@ feature_size: "S"
 ## 3. Non-goals
 
 - **Rescheduling from the list** — changing an Active reminder's time needs a time-entry dialog; deferred to a separate feature to keep this increment small.
-- **Showing `fired`-but-unresolved or `firing` reminders** — those already live in the chat as fired messages (the cleared-inbox view); the Active list is scoped to `pending` only to avoid two surfaces claiming the same item.
+- **Showing `fired`-but-unresolved or `firing` reminders** — those already live in the chat as fired messages (the cleared-inbox view); the Active list is scoped to `pending` only to avoid two surfaces claiming the same item. This `pending`-only scope is firm and **overrides** the former §8 open question about crash-stuck `firing` reminders (now resolved — see §8).
 - **Search / filtering / grouping** of reminders — the list is a flat chronological view; query features are out of scope.
 - **Multi-user / shared lists** — the bot remains single-Owner; no cross-user listing.
 
@@ -74,7 +74,7 @@ feature_size: "S"
 
 **Given** an authorized Owner with three Active reminders scheduled for different times
 **When** the Owner sends the list command
-**Then** the bot replies with a single message listing all three Active reminders ordered from the soonest fire time to the latest, each showing its source text and its fire time in the Owner's configured timezone.
+**Then** the bot replies with a single message listing all three Active reminders ordered from the soonest fire time to the latest (reminders sharing the same fire time are ordered by capture order, earliest first), each showing a bounded preview of its source text (first line, up to ~100 characters) and its fire time as an absolute local date-time in the Owner's configured home timezone (the one set via `/settings`).
 
 ### AC-02 (US-04) — happy path (empty)
 
@@ -86,13 +86,13 @@ feature_size: "S"
 
 **Given** an authorized Owner viewing the Active list that includes a reminder still in the `pending` state
 **When** the Owner taps that reminder's cancel action
-**Then** the bot transitions the reminder to the `deleted` state so it will never fire, and confirms the cancellation to the Owner.
+**Then** the bot transitions the reminder to the `deleted` state so it will never fire, and confirms the cancellation to the Owner in a separate message; the originally rendered list message is left unchanged — a frozen point-in-time snapshot, so re-tapping the cancelled entry is a safe no-op per AC-04.
 
 ### AC-04 (US-02) — domain invariant violation
 
-**Given** an authorized Owner taps the cancel action on a listed reminder that is no longer Active (it has already fired, been resolved, or been cancelled since the list was rendered)
+**Given** an authorized Owner taps the cancel action on a listed reminder that is no longer Active (it has since moved to any non-`pending` state — `firing`, `fired`, `done`, `deleted`, or `expired` — since the list was rendered)
 **When** the bot processes the action
-**Then** the bot does not crash or double-act; it tells the Owner that the reminder is no longer active and takes no further change. *(Named invariant: only an Active — `pending` — reminder can be cancelled from the list.)*
+**Then** the bot does not crash or double-act; it shows the Owner a single uniform "no longer active" message for every non-`pending` end state (including a `firing` reminder mid-delivery) and takes no further change. *(Named invariant: only an Active — `pending` — reminder can be cancelled from the list.)*
 
 ### AC-05 (US-01, US-02) — authorization
 
@@ -116,14 +116,14 @@ feature_size: "S"
 
 **Given** an authorized Owner with more Active reminders than the bot's per-window message limit allows
 **When** the Owner sends the list command
-**Then** the bot's anti-flood limit is never exceeded by the list invocation. *(Named invariant: a single list invocation never exceeds the anti-flood message budget — the send-count assertion lives in §6.)*
+**Then** the bot still replies with exactly one message and never exceeds the anti-flood budget: when the Active set is too large to fit a single message, the bot lists the soonest-firing reminders that fit and appends an overflow indicator (e.g. "… ще M", the count of reminders not shown) rather than sending additional messages. *(Named invariant: a single list invocation never exceeds the anti-flood message budget — the send-count assertion lives in §6.)*
 
 ## 6. Non-functional requirements
 
 | Aspect | Target | Measurement |
 |---|---|---|
 | Latency p95 list response | ≤ 1000 ms from command receipt to message sent | timing log around the list use-case |
-| Messages per list invocation | exactly 1 bot message regardless of reminder count | integration test asserting send-count = 1 |
+| Messages per list-command response | exactly 1 bot message regardless of reminder count — scopes the `/list` response only; replies to action-button taps (cancel confirm, stale no-op, inline source) are separate messages | integration test asserting send-count = 1 for the list command |
 | Anti-flood | inherits the existing ≤ 10 bot messages / 60 s window — the list must not contribute more than 1 | existing anti-flood metric |
 | Accuracy | the list reflects the `pending` set at query time; ordering is by fire time ascending | integration test with fixed clock |
 | Owner-only | every list command and list action is rejected for any non-Owner | unit test on the auth gate |
@@ -148,6 +148,7 @@ feature_size: "S"
 ## 8. Open questions
 
 - [ ] Should rescheduling an Active reminder from the list be added? Default now: deferred to a separate feature. — owner: Mykhailo Podaniev, due: after this feature ships
-- [ ] Should reminders stuck in `firing` after a crash (re-fire path, ADR-0005) ever surface in the list, or is `pending`-only sufficient? Default now: `pending`-only. — owner: Tech Lead, due: before sdd:tasks
 
 > Resolved during drafting: the stale-list / fire-between-render-and-tap scenario is decided — the list is a point-in-time snapshot with no live refresh; tapping cancel on a since-fired reminder is a graceful no-op. This behavior is fixed and tested by **AC-04**, so it is not carried as an open question.
+>
+> Resolved during clarify (2026-06-15): crash-stuck `firing` reminders (re-fire path, ADR-0005) do **not** surface in the list — the list is strictly `pending`-only (§3 overrides the former OQ#2). A reminder that has moved to `firing` since render is handled by AC-04's uniform "no longer active" no-op.
