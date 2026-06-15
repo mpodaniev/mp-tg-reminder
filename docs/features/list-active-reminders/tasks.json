@@ -1,0 +1,77 @@
+{
+  "slug": "list-active-reminders",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Add pending→deleted (cancel) transition + invalid-transition sentinel to the state machine",
+      "layer": "domain",
+      "deps": [],
+      "acs": ["AC-03", "AC-04"],
+      "dod": "state machine allows pending→deleted and rejects every non-pending source with a sentinel error; unit tests cover each end state.",
+      "files_hint": ["src/domain/state-machine.ts", "src/domain/errors.ts"]
+    },
+    {
+      "id": "T2",
+      "title": "Add findActivePendingOrdered() to the ReminderRepository port",
+      "layer": "app",
+      "deps": [],
+      "acs": ["AC-01"],
+      "dod": "port interface declares findActivePendingOrdered() returning pending reminders ordered by fire time; compiles, no behavior change to existing callers.",
+      "files_hint": ["src/app/ports/reminder-repository.ts"]
+    },
+    {
+      "id": "T3",
+      "title": "Implement findActivePendingOrdered in SqliteReminderRepository (reuse idx_reminders_state_scheduled_at)",
+      "layer": "infra",
+      "deps": ["T2"],
+      "acs": ["AC-01"],
+      "dod": "repo returns pending rows ordered by scheduled_at asc, tie-broken by capture order, using the existing index; integration test with a fixed clock passes.",
+      "files_hint": ["src/infra/db/sqlite-reminder-repository.ts", "src/infra/db/row-mappers.ts"]
+    },
+    {
+      "id": "T4",
+      "title": "ListActiveReminders use-case — build the view model with truncation + overflow",
+      "layer": "app",
+      "deps": ["T2"],
+      "acs": ["AC-01", "AC-02", "AC-08"],
+      "dod": "use-case returns an ordered view model (bounded ~100-char preview per row); empty set → empty view model; overflow → soonest-fitting rows + count not shown (ADR-0003); unit tests cover empty / normal / overflow.",
+      "files_hint": ["src/app/use-cases/list-active-reminders.ts"]
+    },
+    {
+      "id": "T5",
+      "title": "CancelPendingReminder use-case — guard pending, transition, persist",
+      "layer": "app",
+      "deps": ["T1", "T2"],
+      "acs": ["AC-03", "AC-04"],
+      "dod": "use-case loads by id, applies pending→deleted and persists on success, surfaces the sentinel unchanged for any non-pending state; unit tests cover success + every stale end state.",
+      "files_hint": ["src/app/use-cases/cancel-pending-reminder.ts"]
+    },
+    {
+      "id": "T6",
+      "title": "/list command handler — render the single Active-list message (+ empty message)",
+      "layer": "ports",
+      "deps": ["T4"],
+      "acs": ["AC-01", "AC-02", "AC-05", "AC-08"],
+      "dod": "handler sends exactly one message: rows with per-row cancel/source buttons, fire time in the Owner's /settings tz, or the no-active-reminders message when empty; owner gate (existing auth middleware) rejects non-Owner; send-count=1 integration test passes.",
+      "files_hint": ["src/ports/handlers/list-handler.ts", "src/ports/dto/index.ts"]
+    },
+    {
+      "id": "T7",
+      "title": "Cancel + go-to-source callback handlers (uniform no-op; deep-link/inline fallback)",
+      "layer": "ports",
+      "deps": ["T5", "T6"],
+      "acs": ["AC-03", "AC-04", "AC-05", "AC-06"],
+      "dod": "cancel callback confirms in a separate message on success and shows the uniform \"no longer active\" no-op otherwise; source callback reuses the fired-reminder deep-link/inline fallback rule; owner gate on callbacks; unit tests cover confirm / no-op / both source branches.",
+      "files_hint": ["src/ports/handlers/list-handler.ts", "src/ports/handlers/source-handler.ts"]
+    },
+    {
+      "id": "T8",
+      "title": "Wire /list — register command, command-menu entry, callback routes + DI",
+      "layer": "wiring",
+      "deps": ["T6", "T7"],
+      "acs": ["AC-05", "AC-07"],
+      "dod": "router registers /list and the Telegram command-menu entry behind the owner gate and wires the cancel/source callbacks; both entry points produce the same response; router-auth test covers the owner gate on the new routes.",
+      "files_hint": ["src/ports/router.ts", "src/main.ts"]
+    }
+  ]
+}
