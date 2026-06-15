@@ -193,7 +193,89 @@ sequenceDiagram
     end
 ```
 
-The `sequences` stage covers the remaining ACs (empty list AC-02, source-link fallback AC-06, non-Owner rejection AC-05, entry-point parity AC-07).
+### Flow 3: View the Active list — empty (AC-02)
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    participant Infra
+    participant DB
+    Note over Owner,DB: Precondition — no reminders in the pending state
+    Owner->>Ports: sends list command
+    Ports->>Ports: owner gate check
+    Ports->>App: list active reminders
+    App->>Infra: find pending ordered by fire time
+    Infra->>DB: read pending (state + scheduled_at index)
+    DB-->>Infra: no rows
+    Infra-->>App: empty set
+    App->>App: build empty view model
+    App-->>Ports: empty list view model
+    Ports-->>Owner: single message — no active reminders
+```
+
+### Flow 4: Go to source from the list — with fallback (AC-06)
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    participant Infra
+    participant DB
+    Owner->>Ports: taps go-to-source on a listed reminder
+    Ports->>Ports: owner gate check
+    Ports->>App: get source for reminder (id)
+    App->>Infra: load reminder + source snapshot by id
+    Infra->>DB: read reminder + source_snapshot
+    DB-->>Infra: reminder + snapshot
+    Infra-->>App: source data (link availability)
+    App-->>Ports: source view
+    alt source chat has a public username
+        Ports-->>Owner: reply with a deep link to the original message
+    else no public username (no deep link can be built)
+        Ports-->>Owner: reply with the inline captured source content
+    end
+```
+
+### Flow 5: List entry-point parity (AC-07)
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    alt Owner types the list command
+        Owner->>Ports: types the list command
+    else Owner selects it from the command menu
+        Owner->>Ports: selects the list command from the menu
+    end
+    Ports->>Ports: route both entry points to the same list handler
+    Ports->>Ports: owner gate check
+    Ports->>App: list active reminders
+    App-->>Ports: list view model
+    Ports-->>Owner: identical Active-list response
+```
+
+### Cross-cutting: non-Owner rejection (AC-05)
+
+```mermaid
+sequenceDiagram
+    actor User as Non-Owner
+    participant Ports
+    participant App
+    alt sends the list command
+        User->>Ports: sends list command
+    else taps a list action button
+        User->>Ports: taps a list action button (cancel / source)
+    end
+    Ports->>Ports: owner gate check — sender is not the Owner
+    Note over Ports,App: rejected at the gate — no use-case invoked, nothing read or written
+    Ports-->>User: no reminders revealed, no action taken
+```
+
+> **Flagged for `design`/`data-model`:** all five flows are read-only except flow 2 (the one mutating persist — `pending` → `deleted`). Flows 1, 3 read the `pending` set via `idx_reminders_state_scheduled_at`; flow 4 reads `reminders` + `source_snapshots` by id. No new participant beyond §5; no new index implied.
 
 ## 7. Deployment view
 
