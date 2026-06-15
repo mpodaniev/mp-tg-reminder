@@ -16,7 +16,8 @@ export type ReminderEvent =
   | "deliver"
   | "snooze"
   | "resolve_done"
-  | "resolve_delete";
+  | "resolve_delete"
+  | "cancel";
 
 export const VALID_TRANSITIONS: Record<
   ReminderState,
@@ -28,6 +29,7 @@ export const VALID_TRANSITIONS: Record<
   },
   pending: {
     fire: "firing",
+    cancel: "deleted",
   },
   firing: {
     deliver: "fired",
