@@ -152,3 +152,38 @@ feature_size: "S"
 > Resolved during drafting: the stale-list / fire-between-render-and-tap scenario is decided — the list is a point-in-time snapshot with no live refresh; tapping cancel on a since-fired reminder is a graceful no-op. This behavior is fixed and tested by **AC-04**, so it is not carried as an open question.
 >
 > Resolved during clarify (2026-06-15): crash-stuck `firing` reminders (re-fire path, ADR-0005) do **not** surface in the list — the list is strictly `pending`-only (§3 overrides the former OQ#2). A reminder that has moved to `firing` since render is handled by AC-04's uniform "no longer active" no-op.
+
+## Test plan
+
+> Maps every §5 acceptance criterion to ≥1 named test. Levels are generic (unit / integration); `implement` detects the concrete runner/commands from the repo (Vitest co-located `__tests__/*.test.ts`). No UI surface is declared (`target_surfaces: [backend-service]`) → no component / visual-regression / e2e-through-UI tiers. No cross-participant API/event boundary → no contract tier.
+
+### Coverage table (AC → test)
+
+| AC | Intent | Test name | Level(s) | Notes |
+|---|---|---|---|---|
+| AC-01 | List 3 Active reminders ordered soonest→latest (tie → capture order), bounded preview (first line, ~100 chars), fire time as absolute local date-time in home tz | `orders pending by fire time then capture order` · `truncates source preview to first line ~100 chars` · `renders fire time in owner home timezone` (unit) + `lists all active reminders ordered with preview and local time` (integration) | unit + integration | unit covers the pure ordering/preview/tz-format rules; integration runs the full read flow on a real ephemeral SQLite under a fixed clock with 3 seeded reminders (flow 1) |
+| AC-02 | Empty Active set → single "no active reminders" message | `empty pending set yields the no-active-reminders message` | integration | seed zero `pending` rows; assert the single empty-state message (flow 3) |
+| AC-03 | Cancel a `pending` reminder → `deleted`, confirm in a separate message, original list message left unchanged | `cancel transitions pending to deleted and confirms separately` | integration | real SQLite; assert persisted state = `deleted`, a separate confirmation message, and that the list message is not edited (flow 2, happy branch) |
+| AC-04 | Cancel tap on a reminder no longer `pending` (`firing`/`fired`/`done`/`deleted`/`expired`) → one uniform "no longer active" message, no crash, no double-act | `state machine rejects cancel from any non-pending state` (unit) + `stale cancel shows uniform no-longer-active for every non-pending end state` (integration) | unit + integration | **dedicated error row.** unit asserts the domain transition guard rejects `pending`←each non-`pending` source state; integration drives the cancel callback for each non-`pending` state and asserts the same uniform message + no state change (flow 2, else branch) |
+| AC-05 | Non-Owner sends the list command or taps a list action → nothing revealed, nothing changed | `non-owner is rejected on list command and on every list callback` | unit | **dedicated authorization row.** unit on the owner gate for both the `/list` command path and the cancel/source callback paths; asserts no use-case invoked, no read, no write (cross-cutting flow AC-05) |
+| AC-06 | Go-to-source on a reminder whose source chat has no public username → inline captured content, not a broken link | `go-to-source falls back to inline content when no public username` | integration | real SQLite reads `reminders` + `source_snapshots` by id; seed a source with no public username; assert inline-content reply, not a deep link (flow 4, else branch) |
+| AC-07 | Typed command and command-menu entry produce the same Active-list response | `typed command and menu entry produce identical list response` | integration | drive both entry points through the router to the same handler; assert identical view-model/response (flow 5) |
+| AC-08 | Active set larger than the per-window limit → exactly 1 message, soonest-firing that fit + "… ще M" overflow indicator | `truncation keeps soonest-firing within min(max-count,4096) and counts overflow` (unit) + `oversized active set sends exactly one message with overflow indicator` (integration) | unit + integration | **dedicated anti-flood-invariant row.** unit covers the truncation/overflow-count logic (`min(max-count, 4096-char)`); integration seeds an oversized set and asserts **send-count = 1** plus the "… ще M" suffix (§6 Messages-per-response + Anti-flood) |
+
+Every §5 criterion maps to ≥1 test; AC-04 (invariant) and AC-05 (authorization) each have a dedicated row, not folded into a happy path.
+
+### Integration strategy — real, ephemeral dependency
+
+- **Dependency:** a throwaway real SQLite via `better-sqlite3` (in-memory or a temp-file DB created per suite, schema applied from the existing `migrations/` up-scripts), torn down after. **No mocked datastore** — a passing mock is not a passing production. The read path exercises the real `idx_reminders_state_scheduled_at` index (`state='pending' ORDER BY scheduled_at`).
+- **Clock:** an injected fixed clock for AC-01/AC-04/Accuracy so fire-time ordering and tz rendering are deterministic.
+- **Seed:** factories/fixtures build `reminders` (+ `source_snapshots`) rows in the needed states (`pending` ×N, plus one each `firing`/`fired`/`done`/`deleted`/`expired` for AC-04, a source-with/without-public-username pair for AC-06).
+- **Cleanup boundary:** per-test — fresh DB (or transaction rollback) before each test so no leftover state leaks between cases and the suite stays non-flaky.
+
+### Load
+
+<!-- N/A: no concurrency/throughput NFR — single-Owner bot. The §6 latency p95 ≤ 1000 ms is verified by a timing assertion inside the AC-01/Accuracy integration test (timing log around the list use-case), not a load scenario; inventing a throughput target would be fabricated. -->
+
+### CI placement
+
+- **Every PR:** unit + integration — both are fast (pure logic + ephemeral SQLite, no network).
+- No e2e / contract / load suites for this feature (single process, no cross-participant boundary, no numeric throughput NFR).
