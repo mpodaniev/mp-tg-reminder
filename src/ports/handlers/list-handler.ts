@@ -72,7 +72,18 @@ export async function handleList(
 ): Promise<void> {
   if (!(await isOwner(ctx.from?.id, repo))) return;
 
+  // Structured timing log around the list use-case — the p95 ≤ 1000 ms
+  // verification leaf (spec §6 Latency / sad §8 Observability / QG-3).
+  const startedAt = Date.now();
   const vm = await listUC.execute();
+  console.info({
+    module: "list",
+    event: "list_rendered",
+    elapsedMs: Date.now() - startedAt,
+    rows: vm.rows.length,
+    overflow: vm.overflowCount,
+  });
+
   if (vm.isEmpty) {
     await ctx.reply(EMPTY_MESSAGE);
     return;

@@ -99,6 +99,22 @@ describe("handleList — /list command handler (T6)", () => {
 
     expect(ctx.reply).not.toHaveBeenCalled();
   });
+
+  it("emits a structured timing log around the list use-case (NFR §6 / QG-3)", async () => {
+    repo.reminders.set(1, pending(1, Date.now() + 60_000, "anything"));
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const ctx = makeCtx(OWNER_ID);
+
+    await handleList(ctx as any, repo, listUC);
+
+    const entry = infoSpy.mock.calls
+      .map((c) => c[0])
+      .find((a) => a && typeof a === "object" && (a as any).module === "list");
+    expect(entry).toBeDefined();
+    expect((entry as any).event).toBe("list_rendered");
+    expect(typeof (entry as any).elapsedMs).toBe("number");
+    infoSpy.mockRestore();
+  });
 });
 
 function makeCallbackCtx() {
