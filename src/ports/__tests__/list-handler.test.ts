@@ -157,6 +157,19 @@ describe("handleListCancel — cancel callback (T7, AC-03/AC-04)", () => {
     }
   );
 
+  it("shows the uniform no-op without crashing when the reminder row is absent (AC-04)", async () => {
+    // nothing seeded → findById returns null (e.g. a since-purged row); a stale
+    // tap must never escape to bot.catch (ADR-0002 immutable snapshot).
+    const ctx = makeCallbackCtx();
+
+    await handleListCancel(ctx as any, cancelUC, 404);
+
+    expect(ctx.answerCallbackQuery).toHaveBeenCalled();
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const [text] = ctx.reply.mock.calls[0]!;
+    expect(text.toLowerCase()).toMatch(/більше не активне/);
+  });
+
   it("the uniform no-op message is identical for every non-pending end state (AC-04)", async () => {
     const messages: string[] = [];
     for (const state of ["firing", "fired", "done", "deleted", "expired"] as ReminderState[]) {

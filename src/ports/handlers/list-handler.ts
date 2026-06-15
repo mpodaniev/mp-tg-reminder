@@ -4,7 +4,7 @@ import type {
   ActiveListViewModel,
 } from "../../app/use-cases/list-active-reminders.js";
 import type { CancelPendingReminder } from "../../app/use-cases/cancel-pending-reminder.js";
-import { InvalidStateTransitionError } from "../../domain/errors.js";
+import { InvalidStateTransitionError, ReminderNotFoundError } from "../../domain/errors.js";
 import { isOwner } from "../middleware/auth-middleware.js";
 import { LIST_CALLBACK } from "../dto/index.js";
 
@@ -101,7 +101,12 @@ export async function handleListCancel(
     await ctx.answerCallbackQuery();
     await ctx.reply(CANCEL_CONFIRM_MESSAGE);
   } catch (err) {
-    if (err instanceof InvalidStateTransitionError) {
+    // A non-pending state (sentinel) or a since-purged row both mean the entry
+    // is no longer Active — uniform no-op, never a crash (AC-04 / ADR-0002).
+    if (
+      err instanceof InvalidStateTransitionError ||
+      err instanceof ReminderNotFoundError
+    ) {
       await ctx.answerCallbackQuery();
       await ctx.reply(NOT_ACTIVE_MESSAGE);
       return;

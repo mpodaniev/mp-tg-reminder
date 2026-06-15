@@ -26,6 +26,13 @@ export class TimezoneNotConfiguredError extends Error {
   }
 }
 
+export class ReminderNotFoundError extends Error {
+  constructor(id: number) {
+    super(`Reminder ${id} not found`);
+    this.name = "ReminderNotFoundError";
+  }
+}
+
 export class UnauthorizedError extends Error {
   constructor() {
     super("Unauthorized: not the Owner");
