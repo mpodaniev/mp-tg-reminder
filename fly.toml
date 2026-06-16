@@ -1,4 +1,4 @@
-app = "telegram-reminder"
+app = "mp-tg-reminder"
 primary_region = "fra"
 
 [build]
