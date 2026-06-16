@@ -54,10 +54,14 @@ const router = buildRouter(repo, gateway, OWNER_CHAT_ID);
 
 // Register the /list command in the Telegram command menu, scoped to the Owner's
 // chat so it is never offered to other users (owner-only posture, AC-05/AC-07).
-await bot.api.setMyCommands(
-  [{ command: "list", description: "Активні нагадування" }],
-  { scope: { type: "chat", chat_id: OWNER_CHAT_ID } }
-);
+try {
+  await bot.api.setMyCommands(
+    [{ command: "list", description: "Активні нагадування" }],
+    { scope: { type: "chat", chat_id: OWNER_CHAT_ID } }
+  );
+} catch (err) {
+  console.warn({ module: "bot", event: "setMyCommands_failed", error: String(err) });
+}
 
 bot.on("message", async (ctx) => {
   await router.handleUpdate(ctx);
