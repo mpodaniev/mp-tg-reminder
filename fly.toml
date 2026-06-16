@@ -1,0 +1,12 @@
+app = "telegram-reminder"
+primary_region = "fra"
+
+[build]
+
+[env]
+  DB_PATH = "/data/reminders.db"
+  SCHEDULER_INTERVAL_MS = "15000"
+
+[[mounts]]
+  source = "reminders_data"
+  destination = "/data"
