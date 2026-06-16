@@ -37,7 +37,48 @@ function makeForwardedCtx(senderId = OWNER_ID, timezone = "Europe/Kyiv") {
   return ctx;
 }
 
+function makeChannelForwardCtx(senderId = OWNER_ID, timezone = "Europe/Kyiv") {
+  const repo = new InMemoryReminderRepository(OWNER_ID, timezone);
+  const captureUC = new CaptureMessage(repo);
+
+  const replies: string[] = [];
+  const sentMarkups: any[] = [];
+
+  const ctx = {
+    from: { id: senderId },
+    message: {
+      forward_origin: { type: "channel", chat: { id: -100987654321, username: "my_channel" }, message_id: 42 },
+      message_id: 999,
+      chat: { id: OWNER_CHAT_ID, username: undefined },
+      text: "Channel post content",
+    },
+    reply: vi.fn().mockImplementation((text: string, opts?: any) => {
+      replies.push(text);
+      sentMarkups.push(opts?.reply_markup);
+      return Promise.resolve({ message_id: 10 });
+    }),
+    _replies: replies,
+    _markups: sentMarkups,
+    _repo: repo,
+    _captureUC: captureUC,
+  };
+
+  return ctx;
+}
+
 describe("handleForwardedMessage (capture conversation entry)", () => {
+  it("uses original message ID and chat username from forward_origin for channel forwards", async () => {
+    const ctx = makeChannelForwardCtx();
+    await handleForwardedMessage(ctx as any, ctx._captureUC);
+
+    const reminders = [...ctx._repo.reminders.values()];
+    expect(reminders.length).toBe(1);
+    const { snapshot } = reminders[0]!;
+    expect(snapshot.messageId).toBe(42);
+    expect(snapshot.chatUsername).toBe("my_channel");
+    expect(snapshot.chatId).toBe(-100987654321);
+  });
+
   it("creates awaiting_time reminder and replies with quick-pick prompt (AC-01)", async () => {
     const ctx = makeForwardedCtx();
     await handleForwardedMessage(ctx as any, ctx._captureUC);
