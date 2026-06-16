@@ -77,10 +77,20 @@ export async function handleForwardedMessage(
   const msg = ctx.message;
   if (!msg) return;
 
+  const origin = msg.forward_origin as any;
+  // For channel forwards (Bot API 7.0+), use the original message ID and chat
+  // from forward_origin — msg.message_id is the ID in the bot chat, not the source.
+  const isChannelForward = origin?.type === "channel";
+  const sourceChatId = isChannelForward ? (origin?.chat?.id ?? msg.chat?.id ?? 0) : (msg.chat?.id ?? 0);
+  const sourceMessageId = isChannelForward ? (origin?.message_id ?? msg.message_id ?? 0) : (msg.message_id ?? 0);
+  const sourceChatUsername = isChannelForward
+    ? (origin?.chat?.username ?? null)
+    : ((msg.forward_from_chat as any)?.username ?? msg.chat?.username ?? null);
+
   const snapshot = {
-    chatId: msg.chat?.id ?? 0,
-    messageId: msg.message_id ?? 0,
-    chatUsername: (msg.forward_from_chat as any)?.username ?? msg.chat?.username ?? null,
+    chatId: sourceChatId,
+    messageId: sourceMessageId,
+    chatUsername: sourceChatUsername,
     senderName: (msg.forward_from as any)?.first_name ?? null,
     senderUsername: (msg.forward_from as any)?.username ?? null,
     messageText: msg.text ?? msg.caption ?? null,
