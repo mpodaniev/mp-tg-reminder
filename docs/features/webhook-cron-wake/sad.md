@@ -278,6 +278,21 @@ ADR files live under `docs/features/webhook-cron-wake/adr/NNNN-<title>.md`.
 
 ## 10. Quality requirements
 
+**QG-1. Reliability of delivery (idempotent, no loss)**
+- **When:** the wake mechanism re-evaluates due reminders, including a retry of an earlier check.
+- **Then:** duplicate reminder deliveries = 0 per reminder occurrence (spec §6 NFR, verbatim); a reminder that becomes due during a gap in wake calls still fires once the next call succeeds, never silently lost (AC-07).
+- **How verify:** count of sent-events per reminder id in application logs (spec §6 NFR measurement, verbatim).
+
+**QG-2. Security of the new public perimeter**
+- **When:** a request reaches the webhook or wake endpoint without a verifiable origin (not Telegram, not the configured external scheduler).
+- **Then:** unauthenticated request rejection = 100% rejected, 0% processed (spec §6 NFR, verbatim).
+- **How verify:** rejected-request counter in application logs (spec §6 NFR measurement, verbatim).
+
+**QG-3. Availability under intermittent host state**
+- **When:** a reminder is scheduled at least one wake interval ahead, and the machine has been idle-stopped.
+- **Then:** reminder delivery delay (p95) ≤5 min from the scheduled time (spec §6 NFR, verbatim); cold-start wake latency (p95) ≤15s from the external wake call to the process being ready to check reminders (spec §6 NFR, verbatim).
+- **How verify:** compare scheduled time vs. actual sent timestamp in application logs; machine-start timestamp vs. first successful reminder check, from logs (spec §6 NFR measurements, verbatim).
+
 ## 11. Risks and technical debt
 
 ## 12. Glossary
