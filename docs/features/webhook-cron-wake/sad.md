@@ -307,3 +307,13 @@ ADR files live under `docs/features/webhook-cron-wake/adr/NNNN-<title>.md`.
 - No lint/vet gate in the repo — pre-existing, unrelated to this feature, already accepted per `docs/architecture-map.md` "Constraints & known tech-debt".
 
 ## 12. Glossary
+
+| Term | Meaning |
+|---|---|
+| Owner | The single Telegram user who owns and interacts with the personal bot instance (CONTEXT.md, `telegram-reminder`). |
+| Reminder | A captured source message paired with a scheduled notification time and a lifecycle state: `pending` → `firing` → `fired`/`deleted` (CONTEXT.md). |
+| Fire | The moment the bot delivers a reminder to the Owner's chat at the scheduled time (CONTEXT.md). |
+| Custom time | A manually entered date/time the Owner types when no quick-pick fits; the "awaiting custom time" prompt this feature makes durable (CONTEXT.md, spec AC-05). |
+| idle window | The platform's own auto-stop threshold — how long the machine sits with no inbound HTTP activity before Fly.io stops it (`docs/features/webhook-cron-wake/CONTEXT.md`). |
+| wake interval | The period between calls from the external scheduler to the wake endpoint; directly bounds the delivery-delay NFR (`docs/features/webhook-cron-wake/CONTEXT.md`). |
+| pending_prompt | The new single-row durable table (§5) replacing the in-memory `pendingCustom` map, so the "awaiting custom time" state survives a machine restart. |
