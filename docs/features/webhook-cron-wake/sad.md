@@ -252,6 +252,20 @@ Single Fly.io machine, single instance — unchanged from today (no load balance
 
 ## 8. Crosscutting concepts
 
+| Concept | Convention | Where defined |
+|---|---|---|
+| Logging | Existing structured logging (see the `list-active-reminders` precedent); extended with rejected-request, delivery-delay, and cold-start-latency log fields for the §6 NFR measurements | here (new fields), repo convention (format) |
+| Authentication | Two schemes: Telegram webhook via grammy's `secretToken` (`X-Telegram-Bot-Api-Secret-Token` header, industry standard); wake endpoint via a static bearer token (ADR seed in §4, kept inline) | §4 |
+| Authorization | Single centralized Owner-check at router dispatch (ADR-0003) | §4, ADR-0003 |
+| Idempotency | Reminder delivery idempotency is a domain-state-machine invariant: a reminder already recorded `fired` is never re-sent, even on a retried wake call (AC-06); enforced by the graceful-shutdown drain (§4) closing the race window between send and the durable write | §4, §6 flow 1 |
+| Error handling | Existing domain sentinel-error-class pattern (`src/domain/errors.ts`) unchanged; new HTTP adapter maps an auth failure to a rejected response with no side effect (no reminder/setting touched), per AC-04 | §4 |
+| ID strategy | Unchanged — SQLite `INTEGER PRIMARY KEY AUTOINCREMENT` | repo convention |
+| Internationalisation | N/A — single language (Ukrainian), unchanged | — |
+| Observability | New: rejected-request counter, delivery-delay timestamps, cold-start latency — feed the §10 quality scenarios directly | §10 |
+| Events | N/A — no event bus introduced; the wake call is a direct HTTP-triggered method call, not an async event | — |
+
+<!-- Assumed (no live response, Recommended default applied): repo logging/error/ID conventions kept as-is, extended only where the NFRs require new measurements. -->
+
 ## 9. Architecture decisions
 
 | # | Title | Status | Section |
