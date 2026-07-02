@@ -103,6 +103,72 @@ Each tactical decision in later sections should trace to one of these seeds.
 
 ## 5. Building block view
 
+The bot keeps its existing hexagonal layering (`domain` → `app` → `infra`/`ports`, manual constructor DI in `src/main.ts`). This feature extends it, it does not restructure it.
+
+**Internal decomposition:**
+
+```
+src/
+├── domain/                  <Reminder aggregate, state machine — unchanged>
+├── app/
+│   ├── use-cases/            <FireDueReminders, ExpireStalePrompts — now called by the wake handler, not a timer>
+│   └── ports/                 <+ PendingPromptRepository interface (new)>
+├── infra/
+│   ├── db/                    <+ migration 04_create_pending_prompt, + row-mapper (new)>
+│   └── telegram/               <GrammyTelegramGateway — unchanged>
+├── ports/
+│   ├── router.ts               <+ single isOwner() gate at dispatch (ADR-0003)>
+│   ├── middleware/auth-middleware.ts  <isOwner() — reused, call site moves>
+│   └── http/                   <NEW — webhook + wake adapter-in module (ADR-0002)>
+│       ├── server.ts            <node:http listener, route dispatch>
+│       ├── webhook-handler.ts    <verifies grammy secretToken, forwards update to the bot>
+│       └── wake-handler.ts       <verifies bearer token, calls scheduler.tick()>
+└── scheduler/
+    └── scheduler.ts             <setInterval removed (ADR-0001); tick() becomes a public awaitable method; stop() awaits any in-flight tick>
+```
+
+**Decisions:**
+
+1. **New module placement: `src/ports/http/`** — the webhook and wake handlers are inbound adapters (adapter-in), the same role `src/ports/router.ts` plays for Telegram updates; placing them alongside it (rather than in `infra/`) keeps the "who initiates" direction consistent with the existing convention. Modeled on `router.ts`'s wiring in `src/main.ts:53`.
+2. **Durable pending-prompt persistence shape: a single-row table** (`pending_prompt`, `id=1`), mirroring the existing `owner_settings` convention (`migrations/01_create_owner_settings.up.sql`) — since there is exactly one Owner, at most one prompt can be pending at a time, so a keyed-by-sender table would carry unused generality. New migration `04_create_pending_prompt.{up,down}.sql`; repository gets `savePendingPrompt()` / `findPendingPrompt()` / `clearPendingPrompt()` on a new `PendingPromptRepository` port, implemented in `infra/db` alongside `SqliteReminderRepository`.
+3. **`Scheduler.tick()` becomes the single reusable entry point** — both the (now-removed) interval and the new wake handler would have called the same method; keeping it as one public `async tick()` avoids duplicating the fire/expire sequencing logic ADR-0001 already established.
+
+<!-- Assumed (no live response, Recommended default applied): all three §5 decisions above. Flag for review. -->
+
+**C4 Container (L2):**
+
+```mermaid
+C4Container
+    title webhook-cron-wake — Containers
+
+    Person(owner, "Owner")
+
+    Container_Boundary(bot, "Telegram Reminder Bot") {
+        Container(httpAdapter, "HTTP adapter (ports/http)", "Node.js node:http", "Webhook + wake endpoints — new inbound adapter")
+        Container(router, "Router (ports)", "TypeScript / grammy", "Dispatches Telegram updates; single Owner-auth gate")
+        Container(appLayer, "app", "TypeScript", "Use-cases: FireDueReminders, ScheduleReminder, etc.")
+        Container(domain, "domain", "TypeScript", "Reminder aggregate, state machine")
+        Container(infra, "infra", "TypeScript", "SQLite repositories + grammy gateway adapters")
+        Container(scheduler, "scheduler", "TypeScript", "tick() — fire due + expire stale; called by the wake handler")
+    }
+
+    ContainerDb(db, "reminders.db", "SQLite", "owner_settings, source_snapshots, reminders, pending_prompt")
+    System_Ext(telegram, "Telegram Bot API", "Webhook updates in; send/edit/delete out")
+    System_Ext(scheduler_ext, "External wake scheduler", "Calls the wake endpoint on an interval")
+
+    Rel(owner, telegram, "Forwards messages / replies")
+    Rel(telegram, httpAdapter, "POSTs webhook update", "HTTPS + secretToken")
+    Rel(scheduler_ext, httpAdapter, "Calls wake endpoint", "HTTPS + bearer token")
+    Rel(httpAdapter, router, "Forwards verified Telegram update")
+    Rel(httpAdapter, scheduler, "Invokes tick()")
+    Rel(router, appLayer, "Invokes use-cases (after Owner-auth gate)")
+    Rel(scheduler, appLayer, "Invokes FireDueReminders / ExpireStalePrompts")
+    Rel(appLayer, domain, "Applies domain rules")
+    Rel(appLayer, infra, "Via repository / gateway ports")
+    Rel(infra, db, "Reads/writes")
+    Rel(infra, telegram, "Sends/edits/deletes messages")
+```
+
 ## 6. Runtime view
 
 ## 7. Deployment view
