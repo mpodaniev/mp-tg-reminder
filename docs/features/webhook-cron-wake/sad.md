@@ -295,4 +295,15 @@ ADR files live under `docs/features/webhook-cron-wake/adr/NNNN-<title>.md`.
 
 ## 11. Risks and technical debt
 
+| Risk / debt | Severity | Mitigation | Owner |
+|---|---|---|---|
+| Open architectural decision: idle-window value needed to reach the ≥50%-stopped KPI (spec §7) is unconfirmed against Fly.io's actual platform behavior — cannot be settled in a design conversation, only by observing a real deployment | Open question | Resolve before `sdd:ship`; deploy and observe whether the webhook's own inbound traffic resets the idle timer before it can fire | Mykhailo Podaniev |
+| This entire §1–§10 pass had ~10 decisions auto-resolved to their Recommended option because no live `AskUserQuestion` response arrived (60s timeout) — every `<!-- Assumed -->` comment across this document and the 3 spawned ADRs needs a real read | Medium | Owner reviews every `<!-- Assumed -->` marker in `sad.md` + `adr/0001`–`0003` before this design is treated as final | Mykhailo Podaniev |
+| The router-level auth-gate refactor (ADR-0003) + the new pending-prompt persistence touch `src/ports/router.ts`, which the just-landed `list-active-reminders` feature also modified — risk of a regression in either feature if the refactor isn't test-covered first | Medium | TDD: router-level integration tests capturing today's behavior before the refactor, then the new gate, per `implement`'s per-task gate | Mykhailo Podaniev |
+| No lint/static-analysis configured in the repo (pre-existing brownfield gap, not introduced by this feature) — the new HTTP adapter code ships without that safety net | Low | Rely on TypeScript strict mode + test coverage for the new module; `gate_lint` skips gracefully per `.claude/sdd.local.md` | Mykhailo Podaniev |
+| No organisational effort budget was quoted in spec.md (§2 Constraints) | Low | Informal solo project — no formal budget needed unless scope grows | Mykhailo Podaniev |
+
+**Accepted debt (acceptable in v1, plan to fix later):**
+- No lint/vet gate in the repo — pre-existing, unrelated to this feature, already accepted per `docs/architecture-map.md` "Constraints & known tech-debt".
+
 ## 12. Glossary
