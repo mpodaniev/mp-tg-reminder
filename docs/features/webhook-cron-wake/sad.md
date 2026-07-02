@@ -171,6 +171,66 @@ C4Container
 
 ## 6. Runtime view
 
+**Critical flow 1: Wake-triggered reminder delivery (AC-01, AC-01b, AC-06)**
+
+```mermaid
+sequenceDiagram
+    participant SchedulerExt as External wake scheduler
+    participant HttpAdapter as HTTP adapter
+    participant Scheduler as scheduler
+    participant AppLayer as app (FireDueReminders)
+    participant Infra as infra (repo + gateway)
+    participant Telegram as Telegram Bot API
+
+    SchedulerExt->>HttpAdapter: calls wake endpoint with bearer token
+    HttpAdapter->>HttpAdapter: verifies token (constant-time)
+    alt token invalid
+        HttpAdapter-->>SchedulerExt: rejects, no action taken
+    else token valid
+        HttpAdapter->>Scheduler: tick()
+        Scheduler->>AppLayer: FireDueReminders.execute()
+        AppLayer->>Infra: findDuePending + findFiring
+        loop each due reminder
+            AppLayer->>Infra: mark firing (durable)
+            AppLayer->>Telegram: send reminder
+            Telegram-->>AppLayer: delivered
+            AppLayer->>Infra: mark fired (durable)
+        end
+        Scheduler-->>HttpAdapter: tick complete
+        HttpAdapter-->>SchedulerExt: 200 OK
+    end
+    Note over Scheduler,Infra: the machine is only allowed to idle again once tick() fully resolves — the graceful-shutdown drain from §4 keeps this window closed even under SIGTERM
+```
+
+**Critical flow 2: Telegram webhook message with the Owner-auth gate (AC-02, AC-04, AC-04b)**
+
+```mermaid
+sequenceDiagram
+    participant Telegram as Telegram Bot API
+    participant HttpAdapter as HTTP adapter
+    participant Router as Router (ports)
+    participant AppLayer as app
+
+    Telegram->>HttpAdapter: POSTs update + secretToken header
+    HttpAdapter->>HttpAdapter: verifies secretToken
+    alt secretToken invalid
+        HttpAdapter-->>Telegram: rejects, no action taken
+    else secretToken valid
+        HttpAdapter->>Router: forwards update
+        Router->>Router: isOwner() gate (ADR-0003)
+        alt sender is not the Owner
+            Router-->>HttpAdapter: no-op, no action taken
+        else sender is the Owner
+            Router->>AppLayer: dispatches to the matching handler
+            AppLayer-->>Router: result
+        end
+        Router-->>HttpAdapter: handled
+        HttpAdapter-->>Telegram: 200 OK
+    end
+```
+
+<!-- Assumed (no live response, Recommended default applied): these two flows as the seed set for M-size design; `sequences` covers every remaining §5 AC branch (AC-03, AC-05, AC-07) in its own pass. -->
+
 ## 7. Deployment view
 
 ## 8. Crosscutting concepts
