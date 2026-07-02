@@ -13,10 +13,15 @@ import { handleList, handleListCancel } from "./handlers/list-handler.js";
 import { ListActiveReminders } from "../app/use-cases/list-active-reminders.js";
 import { CancelPendingReminder } from "../app/use-cases/cancel-pending-reminder.js";
 import { localTodayAt } from "./tz-utils.js";
-import { AlreadyResolvedError } from "../domain/errors.js";
+import { AlreadyResolvedError, InvalidStateTransitionError, ReminderNotFoundError } from "../domain/errors.js";
 
 export type PendingCustom = { type: "capture" | "snooze"; reminderId: number };
 const pendingCustom = new Map<number, PendingCustom>();
+
+// Uniform reply for a stale schedule attempt (quick-pick or custom time) on a
+// reminder that is no longer awaiting_time — mirrors list-handler's ADR-0002
+// no-op pattern so a stale tap never escapes to bot.catch.
+const NOT_ACTIVE_MESSAGE = "⚠️ Це нагадування більше не активне.";
 
 export function buildRouter(
   repo: ReminderRepository,
@@ -128,7 +133,16 @@ async function handleQuickPick(
     return;
   }
 
-  await scheduleUC.execute({ reminderId, scheduledAtMs: scheduledAt });
+  try {
+    await scheduleUC.execute({ reminderId, scheduledAtMs: scheduledAt });
+  } catch (err) {
+    if (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError) {
+      await ctx.answerCallbackQuery?.();
+      await ctx.reply?.(NOT_ACTIVE_MESSAGE);
+      return;
+    }
+    throw err;
+  }
 
   const formatted = new Intl.DateTimeFormat("uk", {
     timeZone: timezone,
@@ -182,8 +196,16 @@ async function handleCustomTimeInput(
   }).format(new Date(scheduledAt));
 
   if (pending.type === "capture") {
-    await scheduleUC.execute({ reminderId: pending.reminderId, scheduledAtMs: scheduledAt });
-    await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+    try {
+      await scheduleUC.execute({ reminderId: pending.reminderId, scheduledAtMs: scheduledAt });
+      await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+    } catch (err) {
+      if (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError) {
+        await ctx.reply?.(NOT_ACTIVE_MESSAGE);
+        return;
+      }
+      throw err;
+    }
   } else {
     try {
       const reminder = await repo.findById(pending.reminderId);

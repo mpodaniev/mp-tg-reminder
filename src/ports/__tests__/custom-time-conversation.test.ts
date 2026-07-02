@@ -179,7 +179,7 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
 
     router.pendingCustom.set(OWNER_CHAT_ID, { type: "capture", reminderId: 6 });
 
-    const ctx = makeTextCtx("20.06.2026 15:00");
+    const ctx = makeTextCtx("20.06.2030 15:00");
     await router.handleUpdate(ctx as any);
 
     const updated = await repo.findById(6);
@@ -213,7 +213,7 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
 
     router.pendingCustom.set(OWNER_CHAT_ID, { type: "snooze", reminderId: 9 });
 
-    const ctx = makeTextCtx("20.06.2026 15:00");
+    const ctx = makeTextCtx("20.06.2030 15:00");
     await router.handleUpdate(ctx as any);
 
     const updated = await repo.findById(9);
