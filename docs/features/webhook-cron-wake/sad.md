@@ -30,6 +30,28 @@ target_surfaces: []
 
 ## 2. Constraints
 
+**Technical.**
+- TypeScript 5.4 (ES2022, NodeNext), Node.js `>=22` (`package.json:6`, `tsconfig.json`)
+- `grammy` 1.21 + `@grammyjs/conversations` 1.2 (Telegram bot framework — supports both long-polling and webhook modes natively), `better-sqlite3` 9.4 (synchronous SQLite) (`package.json:18-22`)
+- Hexagonal / ports-and-adapters layering: `domain` → `app` (use-cases + port interfaces) → `infra`/`ports` (adapters), manual constructor DI in the composition root (`src/main.ts:27-53`)
+- No HTTP server or web framework exists in the codebase today (confirmed via dependency scan) — the webhook + wake endpoints are an entirely new inbound surface, not an extension of an existing listener
+
+**Organisational.**
+- Solo owner-developer (Mykhailo Podaniev), no team
+- No hard deadline stated in spec.md; `feature_size: M` (1–2 sprints per the size matrix)
+- Effort budget not explicitly quoted in the spec — flagged in §11 as an accepted gap
+
+**Conventions.**
+- Flyway-style migrations `NN_description.{up,down}.sql` in `migrations/`, tracked in `_migrations`, applied in sorted order (`src/infra/db/migrate.ts:24-42`); next number is `04`
+- Manual constructor DI in the composition root (`src/main.ts:27-53`)
+- Domain custom error classes extending `Error` with overridden `.name` (`src/domain/errors.ts:1-35`)
+- Vitest tests, co-located `__tests__/*.test.ts`; integration tier uses a tmpdir SQLite DB
+- No lint/static-analysis configured — a pre-existing gap, not introduced by this feature
+
+**Regulatory / external.**
+- Data classification: internal — personal reminder content for a single Owner; no new data classes introduced (spec §6.1)
+- Security review required — this feature adds the bot's first public inbound endpoints and closes a pre-existing owner-authorization gap (spec §6.1)
+
 ## 3. Context and scope
 
 ## 4. Solution strategy
