@@ -54,6 +54,38 @@ target_surfaces: []
 
 ## 3. Context and scope
 
+The bot serves a single Owner on Telegram: the Owner forwards a message, picks a time, and the bot fires a reminder back into the chat at that time. Today the bot only makes outbound calls to Telegram (long-polling) — nothing external can reach in. This feature opens two new inbound trust boundaries: a Telegram webhook (replacing polling) and a periodic wake endpoint called by an external scheduler, so the hosting platform can idle-stop the machine between activity and still deliver time-based reminders.
+
+<!-- brownfield: TypeScript/grammy/better-sqlite3 bot; hexagonal layering (domain/app/infra/ports/scheduler); no existing HTTP listener; fresh scan via sdd:explorer on commit 804889a (docs/architecture-map.md predates this by 15 commits). -->
+
+**External systems (in / out):**
+
+| Actor or system | Type | Interaction |
+|---|---|---|
+| Owner | Person | Forwards messages, picks times, replies to prompts, receives reminders — via Telegram |
+| Telegram Bot API | System (external) | Delivers updates via webhook POST; receives outbound send/edit/delete calls from the bot |
+| External wake scheduler | System (external) | Calls the periodic wake endpoint on a fixed interval to trigger a due-reminders check |
+| Fly.io platform | System (external) | Hosts the machine; auto-stops it when inbound HTTP activity is idle, auto-starts it on the next inbound request |
+
+**C4 Context (L1):**
+
+```mermaid
+C4Context
+    title webhook-cron-wake — System Context
+
+    Person(owner, "Owner", "Forwards messages, picks times, receives reminders")
+    System(bot, "Telegram Reminder Bot", "Captures messages, schedules and fires reminders")
+    System_Ext(telegram, "Telegram Bot API", "Delivers updates via webhook; sends/edits/deletes messages")
+    System_Ext(scheduler_ext, "External wake scheduler", "Calls the wake endpoint on a fixed interval")
+    System_Ext(fly, "Fly.io platform", "Hosts the machine; auto-stops/starts on inbound HTTP activity")
+
+    Rel(owner, telegram, "Forwards messages / taps buttons / replies", "Telegram client")
+    Rel(telegram, bot, "Delivers updates", "HTTPS webhook")
+    Rel(bot, telegram, "Sends/edits/deletes reminder messages", "HTTPS")
+    Rel(scheduler_ext, bot, "Triggers a due-reminders check", "HTTPS wake call")
+    Rel(fly, bot, "Stops/starts the machine based on inbound HTTP activity", "platform-internal")
+```
+
 ## 4. Solution strategy
 
 ## 5. Building block view
