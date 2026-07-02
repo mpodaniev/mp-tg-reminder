@@ -4,7 +4,7 @@ owner: "Mykhailo Podaniev"
 reviewers: ["Owner"]
 updated_at: "2026-07-02"
 feature_size: "M"
-target_surfaces: []
+target_surfaces: [backend-service]
 ---
 
 # Software Architecture Document — webhook-cron-wake
@@ -88,6 +88,19 @@ C4Context
 
 ## 4. Solution strategy
 
+**Top strategic choices (the seeds for ADRs):**
+
+1. **Target surface: `backend-service`** — the bot has no UI surface beyond the Telegram client (mediated entirely through the existing grammy integration, not a surface this feature builds); webhook + wake are new HTTP endpoints of the same single deployable process. `target_surfaces: [backend-service]` is written to this document's frontmatter.
+2. **Wake call as the sole trigger for due-reminder checks** (→ ADR-0001) — the internal 15-second `setInterval` is removed; `FireDueReminders`/`ExpireStalePrompts` run only when the external wake HTTP endpoint is called. This is the only way the machine can actually reach a fully-stopped state, which is this feature's core premise; AC-07's no-cutoff catch-up semantics already cover the reliability gap a fallback timer would otherwise fill.
+3. **`node:http` for the webhook and wake endpoints** (→ ADR-0002) — no HTTP framework exists in the codebase today, and the project's standing instruction is to never add a dependency without an explicit request. Two routes don't need routing/middleware machinery to stay readable.
+4. **Owner-authorization centralized in a single router-dispatch gate** (→ ADR-0003) — one `isOwner()` check in `buildRouter`, before any handler runs, replacing the inconsistent pattern where only `callback_query` is checked today (`src/ports/router.ts:62-66`) while the custom-time text-input path (`src/ports/router.ts:56-59`) is not. This closes AC-04b at its root and Owner-gates any handler added later by construction.
+5. **Graceful shutdown drains the in-flight tick** — `Scheduler.stop()` becomes `async` and awaits any in-flight tick before returning; `src/main.ts`'s `SIGTERM`/`SIGINT` handler (`src/main.ts:81-91`) awaits `scheduler.stop()` before calling `db.close()`. This closes AC-01b and is the primary defense for AC-06's idempotent-delivery requirement — it removes the race window between a successful Telegram send and the durable "fired" write. Scored against the blast-radius gate: touches 2 modules (`main.ts` + `scheduler.ts`) but is cheap to reverse and has no serious alternative given AC-01b's explicit wording — kept inline, no ADR.
+6. **Wake-endpoint authentication: a static bearer token in an environment variable, checked in constant time** — the external scheduler is entirely under the Owner's control, so a shared secret is sufficient; rotation is a manual env-var change. The Telegram webhook is authenticated separately via grammy's built-in `secretToken` mechanism (the `X-Telegram-Bot-Api-Secret-Token` header) — an industry-standard convention with no serious alternative, so it is not treated as a separate decision. Scored against the gate: single module, low irreversibility (rotating the scheme is a config change) — kept inline, no ADR.
+
+Each tactical decision in later sections should trace to one of these seeds.
+
+<!-- No live AskUserQuestion response was available for DEC-4b/4c/4d/4e during this Socratic pass (60s timeout); the Recommended option was applied per Auto Mode and is flagged here for the Owner's review before this SAD is treated as final. -->
+
 ## 5. Building block view
 
 ## 6. Runtime view
@@ -97,6 +110,14 @@ C4Context
 ## 8. Crosscutting concepts
 
 ## 9. Architecture decisions
+
+| # | Title | Status | Section |
+|---|---|---|---|
+| 0001 | Use the external wake call as the sole trigger for due-reminder checks | Accepted | §4 |
+| 0002 | Use Node's built-in http module for the webhook and wake endpoints | Accepted | §4 |
+| 0003 | Centralize Owner authorization in a single router-level gate | Accepted | §4 |
+
+ADR files live under `docs/features/webhook-cron-wake/adr/NNNN-<title>.md`.
 
 ## 10. Quality requirements
 
