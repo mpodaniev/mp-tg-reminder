@@ -233,6 +233,23 @@ sequenceDiagram
 
 ## 7. Deployment view
 
+Single Fly.io machine, single instance — unchanged from today (no load balancer, no replicas; this is a personal, single-Owner bot). What changes is *how* the machine is kept alive: today it's always-on; after this feature it can be stopped by the platform whenever no inbound HTTP activity occurs (webhook or wake calls), and restarted automatically on the next inbound request.
+
+**Wake interval: 3 minutes** — chosen with headroom under the spec §6 constraint (wake interval + cold-start p95 ≤ 5 min delivery-delay target). At 3 min + a 15 s cold-start p95, the worst case is ~3 min 15 s, comfortably under the 5 min bound even allowing for processing time.
+
+**Idle window (Fly.io's own auto-stop threshold): left as an open question** — spec §8 flags this as needing empirical validation against Fly.io's actual platform behavior (does the webhook's own inbound traffic reset the idle timer before it can fire?), which cannot be determined from a design conversation; it needs to be observed after deploying. See §11 for the tracked open question.
+
+**Monitoring:**
+- Metrics: rejected-request counter (unauthenticated webhook/wake calls) — spec §6 NFR target 100% rejected
+- Metrics: delivery-delay (scheduled time vs. actual sent timestamp) — spec §6 NFR target p95 ≤5 min
+- Metrics: cold-start latency (wake call received vs. first successful reminder check) — spec §6 NFR target p95 ≤15s
+- Alerts: none automated in v1 (single-Owner bot, manually observed) — an accepted gap, see §11
+
+**Scaling thresholds:**
+- N/A — single-Owner bot, no scaling axis; a second Owner would require a schema change (out of scope per spec §3 Non-goals)
+
+<!-- Assumed (no live response, Recommended default applied): wake interval = 3 minutes. Flag for review — this is a concrete operational number the Owner should confirm before `tasks`. -->
+
 ## 8. Crosscutting concepts
 
 ## 9. Architecture decisions
