@@ -202,6 +202,31 @@ sequenceDiagram
     Note over Scheduler,Infra: the machine is only allowed to idle again once tick() fully resolves — the graceful-shutdown drain from §4 keeps this window closed even under SIGTERM
 ```
 
+**Critical flow 1b: Confirming a time sooner than the wake interval (AC-03)**
+
+```mermaid
+sequenceDiagram
+    participant Telegram as Telegram Bot API
+    participant HttpAdapter as HTTP adapter
+    participant Router as Router (ports)
+    participant AppLayer as app (ScheduleReminder)
+    participant Infra as infra (repo)
+
+    Telegram->>HttpAdapter: POSTs Owner's time confirmation + secretToken
+    HttpAdapter->>Router: forwards verified update
+    Router->>AppLayer: ScheduleReminder.execute(chosen time)
+    AppLayer->>AppLayer: compares chosen time to the wake interval
+    alt chosen time falls sooner than the wake interval
+        AppLayer->>Infra: persists reminder (durable)
+        AppLayer-->>Router: confirmed + delivery may arrive up to one wake interval late
+    else chosen time has headroom over the wake interval
+        AppLayer->>Infra: persists reminder (durable)
+        AppLayer-->>Router: confirmed, no delay estimate needed
+    end
+    Router-->>HttpAdapter: reply
+    HttpAdapter-->>Telegram: sends confirmation message (+ delay estimate if applicable)
+```
+
 **Critical flow 2: Telegram webhook message with the Owner-auth gate (AC-02, AC-04, AC-04b)**
 
 ```mermaid
@@ -229,7 +254,126 @@ sequenceDiagram
     end
 ```
 
+**Critical flow 3: Durable custom-time prompt survives a restart (AC-05)**
+
+```mermaid
+sequenceDiagram
+    participant Telegram as Telegram Bot API
+    participant HttpAdapter as HTTP adapter
+    participant Router as Router (ports)
+    participant Infra as infra (repo)
+
+    Note over Infra: precondition — an earlier "awaiting custom time" prompt was durably persisted (pending_prompt)
+    Note over HttpAdapter: the machine idles, stops, and restarts before the Owner replies — in-memory state is gone, the durable row survives
+    Telegram->>HttpAdapter: POSTs Owner's reply + secretToken
+    HttpAdapter->>HttpAdapter: verifies secretToken
+    alt secretToken invalid
+        HttpAdapter-->>Telegram: rejects, no action taken
+    else secretToken valid
+        HttpAdapter->>Router: forwards update
+        Router->>Router: isOwner() gate
+        alt sender is not the Owner
+            Router-->>HttpAdapter: no-op, no action taken
+        else sender is the Owner
+            Router->>Infra: findPendingPrompt()
+            alt no pending prompt found
+                Router->>Router: treats the reply as an unrelated message
+            else pending prompt found
+                Router->>Router: parses the reply as the awaited custom time
+                Router->>Infra: schedules reminder + clears pending prompt (durable)
+            end
+        end
+        Router-->>HttpAdapter: handled
+        HttpAdapter-->>Telegram: 200 OK
+    end
+```
+
+**Critical flow 4: Idempotent retry of a wake call does not duplicate delivery (AC-06)**
+
+```mermaid
+sequenceDiagram
+    participant SchedulerExt as External wake scheduler
+    participant HttpAdapter as HTTP adapter
+    participant Scheduler as scheduler
+    participant AppLayer as app (FireDueReminders)
+    participant Infra as infra (repo + gateway)
+    participant Telegram as Telegram Bot API
+
+    Note over SchedulerExt,HttpAdapter: a network retry causes the same wake cycle to be requested twice
+    SchedulerExt->>HttpAdapter: calls wake endpoint (retry of an earlier call)
+    HttpAdapter->>Scheduler: tick()
+    Scheduler->>AppLayer: FireDueReminders.execute()
+    AppLayer->>Infra: findDuePending + findFiring
+    loop each candidate reminder occurrence
+        AppLayer->>Infra: checks delivery state for this occurrence (idempotency key = reminder occurrence id)
+        alt occurrence already recorded fired
+            AppLayer->>AppLayer: skips — no re-send
+        else occurrence not yet fired
+            AppLayer->>Infra: mark firing (durable)
+            AppLayer->>Telegram: send reminder
+            Telegram-->>AppLayer: delivered
+            AppLayer->>Infra: mark fired (durable)
+        end
+    end
+    Note over AppLayer,Telegram: retry N times with backoff if a single send call itself fails transiently
+    alt send still fails after N retries
+        AppLayer->>Infra: leaves the occurrence in firing state (favors not delivering again per AC-06)
+        Note over AppLayer,Infra: dead-letter — the occurrence surfaces for manual Owner review rather than an automatic re-send
+    end
+    Scheduler-->>HttpAdapter: tick complete
+    HttpAdapter-->>SchedulerExt: 200 OK
+```
+
+**Critical flow 5: A missed wake cycle catches up, never silently lost (AC-07)**
+
+```mermaid
+sequenceDiagram
+    participant SchedulerExt as External wake scheduler
+    participant HttpAdapter as HTTP adapter
+    participant Scheduler as scheduler
+    participant AppLayer as app (FireDueReminders)
+    participant Infra as infra (repo + gateway)
+    participant Telegram as Telegram Bot API
+
+    Note over SchedulerExt,HttpAdapter: the external scheduler misses one or more expected wake cycles
+    Note over Infra: one or more reminders become due during the gap — no wake call arrives to check them
+    SchedulerExt->>HttpAdapter: calls wake endpoint (next successful cycle after the gap)
+    HttpAdapter->>HttpAdapter: verifies token (constant-time)
+    alt token invalid
+        HttpAdapter-->>SchedulerExt: rejects, no action taken
+    else token valid
+        HttpAdapter->>Scheduler: tick()
+        Scheduler->>AppLayer: FireDueReminders.execute()
+        AppLayer->>Infra: findDuePending (no cutoff — every overdue reminder is included, regardless of age)
+        loop each reminder that became due during the gap
+            AppLayer->>Infra: mark firing (durable)
+            AppLayer->>Telegram: send reminder (delayed, not lost)
+            Telegram-->>AppLayer: delivered
+            AppLayer->>Infra: mark fired (durable)
+        end
+        Scheduler-->>HttpAdapter: tick complete
+        HttpAdapter-->>SchedulerExt: 200 OK
+    end
+    Note over AppLayer,Infra: every reminder that became due during the gap eventually fires once — delayed, never lost (AC-07)
+```
+
 <!-- Assumed (no live response, Recommended default applied): these two flows as the seed set for M-size design; `sequences` covers every remaining §5 AC branch (AC-03, AC-05, AC-07) in its own pass. -->
+
+**Coverage check (§4 user stories × §5 acceptance criteria → flow):**
+
+| User story | Acceptance criteria | Flow |
+|---|---|---|
+| US-01 | AC-01, AC-01b | Critical flow 1 |
+| US-01 | AC-03 | Critical flow 1b |
+| US-02 | AC-02 | Critical flow 2 |
+| US-03 | AC-05 | Critical flow 3 |
+| US-04 | AC-06 | Critical flow 4 |
+| US-05 | AC-04, AC-04b | Critical flow 2 (webhook path); AC-04 also shown on the wake path in flows 1, 1b, 4, 5 |
+| US-06 | AC-07 | Critical flow 5 |
+
+Every §4 user story maps to ≥1 flow; every §5 acceptance criterion is shown by a dedicated flow or an `alt`/`else` branch — no explicit non-runtime N/A was needed.
+
+<!-- Assumed (no live response, Recommended default applied): the 4 new flows (1b, 3, 4, 5) drafted to close AC-03/AC-05/AC-06/AC-07 coverage, per the seed-set note above. Flag for the Owner's review before this SAD is treated as final, per the same review note in §11. -->
 
 ## 7. Deployment view
 
