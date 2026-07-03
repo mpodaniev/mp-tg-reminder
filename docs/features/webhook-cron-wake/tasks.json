@@ -1,0 +1,147 @@
+{
+  "slug": "webhook-cron-wake",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Promote and validate the staged pending_prompt migration",
+      "layer": "migration",
+      "deps": [],
+      "acs": ["AC-05"],
+      "dod": "The staged 01_create_pending_prompt migration is promoted into the live migrations/ tree, applies and reverts cleanly (migrate:up then migrate:down) against a fresh SQLite DB.",
+      "files_hint": [
+        "docs/features/webhook-cron-wake/migrations/01_create_pending_prompt.up.sql",
+        "docs/features/webhook-cron-wake/migrations/01_create_pending_prompt.down.sql"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Add the PendingPromptRepository port interface",
+      "layer": "app",
+      "deps": [],
+      "acs": ["AC-05"],
+      "dod": "A new PendingPromptRepository interface (savePendingPrompt/findPendingPrompt/clearPendingPrompt) compiles and is exported from src/app/ports, with no implementation yet.",
+      "files_hint": ["src/app/ports/pending-prompt-repository.ts", "src/app/ports/index.ts"]
+    },
+    {
+      "id": "T3",
+      "title": "Implement PendingPromptRepository against SQLite",
+      "layer": "infra",
+      "deps": ["T1", "T2"],
+      "acs": ["AC-05"],
+      "dod": "Unit/integration tests for save/find/clear against a tmpdir SQLite DB pass, including the upsert-on-id=1 and delete-means-absent semantics from data-model.md.",
+      "files_hint": [
+        "src/infra/db/sqlite-pending-prompt-repository.ts",
+        "src/infra/db/row-mappers.ts",
+        "src/infra/db/__tests__/sqlite-pending-prompt-repository.test.ts"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Make Scheduler.tick() a public awaitable entry point; stop() awaits an in-flight tick",
+      "layer": "app",
+      "deps": [],
+      "acs": ["AC-01b"],
+      "dod": "Unit tests confirm tick() is callable externally and returns a Promise that resolves after fire+expire complete, and that stop() called mid-tick resolves only after the in-flight tick finishes (no setInterval remains, per ADR-0001).",
+      "files_hint": ["src/scheduler/scheduler.ts", "src/scheduler/__tests__/scheduler.test.ts"]
+    },
+    {
+      "id": "T5",
+      "title": "Add idempotent-retry tests for FireDueReminders",
+      "layer": "tests",
+      "deps": ["T4"],
+      "acs": ["AC-06"],
+      "dod": "A test that calls tick() twice against the same due reminder (simulating a retried wake call) asserts exactly one send/mark-fired occurs, and a test confirms a reminder left in `firing` after a failed send is not silently re-sent successfully twice.",
+      "files_hint": ["src/app/use-cases/__tests__/fire-due-reminders.test.ts"]
+    },
+    {
+      "id": "T6",
+      "title": "Characterize today's router dispatch + auth behavior before the gate refactor",
+      "layer": "tests",
+      "deps": [],
+      "acs": ["AC-04b"],
+      "dod": "Tests pin current behavior for every handleUpdate path (forwarded message, pending custom-time text, /list, /settings, callback_query) including the pre-existing gap that only callback_query checks the sender — this is the regression safety net called out in sad.md §11 before router.ts is touched.",
+      "files_hint": ["src/ports/__tests__/router-auth.test.ts"]
+    },
+    {
+      "id": "T7",
+      "title": "Centralize Owner authorization in a single router-dispatch gate (ADR-0003)",
+      "layer": "ports",
+      "deps": ["T6"],
+      "acs": ["AC-04b"],
+      "dod": "A single isOwner() check runs once in buildRouter's handleUpdate before any handler dispatch; new tests show every handler (not only callback_query) denies a non-Owner sender with no side effect, and the T6 characterization tests for Owner-sender behavior still pass unchanged.",
+      "files_hint": ["src/ports/router.ts", "src/ports/middleware/auth-middleware.ts", "src/ports/__tests__/router-auth.test.ts"]
+    },
+    {
+      "id": "T8",
+      "title": "Replace the in-memory pendingCustom map with the durable PendingPromptRepository",
+      "layer": "ports",
+      "deps": ["T3", "T7"],
+      "acs": ["AC-05"],
+      "dod": "handleQuickPick's/handleSnoozePick's custom branch and handleCustomTimeInput read/write/clear pending_prompt via the repository instead of the module-level Map; a test simulating a process restart (new repo instance, same DB) shows a pending prompt set before restart is still recognized after.",
+      "files_hint": ["src/ports/router.ts", "src/ports/__tests__/custom-time-conversation.test.ts"]
+    },
+    {
+      "id": "T9",
+      "title": "Add a wake-interval-aware delay estimate to reminder confirmation (AC-03)",
+      "layer": "app",
+      "deps": [],
+      "acs": ["AC-03"],
+      "dod": "ScheduleReminder (or the router confirmation reply) compares the chosen time to the configured wake interval and a test confirms the Owner is told delivery may arrive up to one wake interval late when the chosen time is sooner than that interval, and sees no such note otherwise.",
+      "files_hint": ["src/app/use-cases/schedule-reminder.ts", "src/ports/router.ts", "src/app/use-cases/__tests__/schedule-reminder.test.ts"]
+    },
+    {
+      "id": "T10",
+      "title": "Build the node:http server skeleton with route dispatch (ADR-0002)",
+      "layer": "ports",
+      "deps": [],
+      "acs": ["AC-04"],
+      "dod": "A node:http server routes POST /webhook/telegram and POST /wake to injected handlers and returns 404 for any other path/method; a test hits an unknown route and gets 404 with no handler invoked.",
+      "files_hint": ["src/ports/http/server.ts", "src/ports/http/__tests__/server.test.ts"]
+    },
+    {
+      "id": "T11",
+      "title": "Implement the Telegram webhook handler (secretToken verification)",
+      "layer": "ports",
+      "deps": ["T7", "T10"],
+      "acs": ["AC-02", "AC-04", "AC-04b"],
+      "dod": "A request with a missing/invalid X-Telegram-Bot-Api-Secret-Token is rejected 401 per contracts/openapi.yaml with no handler invoked (AC-04); a valid request is forwarded to the Owner-gated router and always returns 200 regardless of the sender's Owner status (AC-04b), matching the contract's Ack schema.",
+      "files_hint": ["src/ports/http/webhook-handler.ts", "src/ports/http/__tests__/webhook-handler.test.ts"]
+    },
+    {
+      "id": "T12",
+      "title": "Implement the wake handler (constant-time bearer token verification)",
+      "layer": "ports",
+      "deps": ["T4", "T10"],
+      "acs": ["AC-01", "AC-01b", "AC-04"],
+      "dod": "A request with a missing/invalid bearer token is rejected 401 per contracts/openapi.yaml with scheduler.tick() never invoked (AC-04); a valid request invokes tick() and the response is not sent until tick() resolves (AC-01b), returning the Ack schema on success.",
+      "files_hint": ["src/ports/http/wake-handler.ts", "src/ports/http/__tests__/wake-handler.test.ts"]
+    },
+    {
+      "id": "T13",
+      "title": "Wire the HTTP adapter into the composition root; switch to webhook mode; graceful shutdown",
+      "layer": "wiring",
+      "deps": ["T8", "T9", "T11", "T12"],
+      "acs": ["AC-01b", "AC-02"],
+      "dod": "main.ts starts the http server instead of bot.start()/long-polling and calls bot.api.setWebhook with the secret token; the setInterval scheduler.start() call is removed (ADR-0001); SIGTERM/SIGINT handlers await scheduler.stop() before db.close(); fly.toml declares an http_service block so Fly.io can track inbound activity for idle-stop.",
+      "files_hint": ["src/main.ts", "fly.toml"]
+    },
+    {
+      "id": "T14",
+      "title": "Integration tests for the new public perimeter and catch-up semantics",
+      "layer": "tests",
+      "deps": ["T13"],
+      "acs": ["AC-04", "AC-05", "AC-07"],
+      "dod": "End-to-end tests over the running http server show: unauthenticated webhook/wake requests are rejected 100% with no Owner data changed (AC-04); a pending prompt persisted before a simulated restart is honored after (AC-05); reminders that became due during a simulated wake-cycle gap all fire once tick() next runs, none lost (AC-07).",
+      "files_hint": ["src/ports/http/__tests__/webhook-handler.test.ts", "src/ports/http/__tests__/wake-handler.test.ts", "src/app/use-cases/__tests__/fire-due-reminders.test.ts"]
+    },
+    {
+      "id": "T15",
+      "title": "Document the webhook + wake deployment setup",
+      "layer": "docs",
+      "deps": ["T13"],
+      "acs": ["AC-01", "AC-07"],
+      "dod": "A deployment note lists the new required env vars (webhook secret token, wake bearer token, port), the one-time setWebhook step, and the configured wake interval/cadence for the external scheduler, so a redeploy from scratch is reproducible.",
+      "files_hint": ["docs/features/webhook-cron-wake/README.md"]
+    }
+  ]
+}
