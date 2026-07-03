@@ -1,0 +1,166 @@
+openapi: 3.1.0
+
+info:
+  title: webhook-cron-wake API
+  version: 0.1.0
+  description: |
+    The bot's first two public inbound HTTP endpoints. They replace the always-on
+    long-poll + in-process timer design with a Telegram webhook (real inbound HTTP
+    traffic the hosting platform can track) plus an authenticated periodic "wake"
+    endpoint an external scheduler calls to trigger a due-reminders check — letting
+    the platform safely stop and restart the machine between calls (spec.md §1).
+    Both endpoints are action endpoints, not resource CRUD: neither returns or
+    accepts a list, so no pagination surface exists in this contract.
+
+servers:
+  - url: https://<fly-app>.fly.dev
+    description: Production (Fly.io machine)
+  - url: http://localhost:3000
+    description: Local
+
+paths:
+  /webhook/telegram:
+    post:
+      summary: Receive a Telegram Bot API update
+      description: |
+        grammy webhook target (sad.md §5 `src/ports/http/webhook-handler.ts`). Verifies
+        the `X-Telegram-Bot-Api-Secret-Token` header (grammy's built-in secretToken
+        mechanism, sad.md §4 decision 6), then forwards the verified update to the
+        Router for dispatch. The Owner-authorization gate (ADR-0003) runs *inside*
+        the Router, after this endpoint's own secret-token check — a sender who is
+        verified-Telegram-but-not-Owner still receives 200 OK (Telegram's own retry
+        semantics expect an ack; the router silently no-ops per AC-04b, sad.md §6
+        Critical flow 2). Only a missing/invalid secret token is rejected here.
+      operationId: receiveTelegramUpdate
+      security:
+        - TelegramSecretToken: []
+      parameters:
+        - in: header
+          name: X-Telegram-Bot-Api-Secret-Token
+          required: true
+          description: grammy's webhook secret-token header (sad.md §4 decision 6) — industry-standard Telegram webhook convention, not a bearer scheme
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TelegramUpdate" }
+            example:
+              update_id: 100000001
+              message:
+                message_id: 42
+                date: 1751500000
+                chat: { id: 111111111, type: "private" }
+                from: { id: 111111111, is_bot: false, first_name: "Test Owner" }
+                text: "Test message"
+      responses:
+        "200":
+          description: |
+            Update handled — always returned once the secret token verifies, whether
+            the sender is the Owner (dispatched) or not (silent no-op, AC-04b; sad.md
+            §6 Critical flow 2/3). Distinguishing the two is an internal authorization
+            outcome, not an HTTP-visible one, by design.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ack" }
+              example: {}
+        "401":
+          description: secret token missing or invalid — rejected before any handler runs (AC-04)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "webhook.invalid_secret_token"
+                message: "X-Telegram-Bot-Api-Secret-Token missing or invalid"
+
+  /wake:
+    post:
+      summary: Trigger a due-reminders check
+      description: |
+        Called on a fixed interval by the external wake scheduler (sad.md §7, 3-minute
+        interval) to invoke `Scheduler.tick()` → `FireDueReminders` + `ExpireStalePrompts`
+        (sad.md §6 Critical flows 1, 1b, 4, 5). A retried call (network retry, or a wake
+        cycle that arrives twice) is handled idempotently by the domain state machine
+        itself — an occurrence already recorded `fired` is skipped (AC-06) — not by a
+        client-supplied `Idempotency-Key` header; see api-sync-report.md for why this
+        deviates from the generic mutating+retriable convention.
+      operationId: triggerWake
+      security:
+        - WakeBearerAuth: []
+      requestBody: false
+      responses:
+        "200":
+          description: |
+            Tick completed — every due reminder was durably marked fired and delivered,
+            or already-fired occurrences were skipped (AC-06); the machine is only
+            allowed to idle again once this resolves (AC-01b, sad.md §6 Critical flow 1
+            Note). No summary fields are returned — no data-model.md column or spec.md
+            AC defines a response shape beyond "tick complete".
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ack" }
+              example: {}
+        "401":
+          description: bearer token missing or invalid — rejected, no action taken (AC-04)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "wake.invalid_token"
+                message: "Authorization bearer token missing or invalid"
+
+components:
+  securitySchemes:
+    TelegramSecretToken:
+      type: apiKey
+      in: header
+      name: X-Telegram-Bot-Api-Secret-Token
+      description: grammy's webhook secret-token convention (sad.md §4 decision 6) — verified constant-time against the configured secret
+
+    WakeBearerAuth:
+      type: http
+      scheme: bearer
+      description: static bearer token in an environment variable, checked in constant time (sad.md §4 decision 6) — rotation is a manual env-var change
+
+  responses:
+    Error:
+      description: Error — unified envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z_]+\\.[a-z_]+$"
+          example: "webhook.invalid_secret_token"
+        message: { type: string }
+        details:
+          type: object
+          description: optional structured context — unused by either endpoint today (no field-level validation on either request shape)
+
+    Ack:
+      type: object
+      additionalProperties: false
+      description: |
+        Empty success acknowledgement — both endpoints return 200 with no body fields;
+        the meaningful effect (message dispatched, tick completed) is internal, not
+        echoed back to the caller (sad.md §6, all 5 critical flows end each success
+        branch with a bare "200 OK").
+      properties: {}
+
+    TelegramUpdate:
+      type: object
+      description: |
+        Telegram Bot API's own `Update` object — external schema owned by Telegram, not
+        modeled in data-model.md. Passed through opaquely to grammy's update processing
+        (sad.md §5 `webhook-handler.ts`: "verifies grammy secretToken, forwards update to
+        the bot"); this contract does not re-type Telegram's schema field-by-field.
+      additionalProperties: true
+      properties:
+        update_id: { type: integer }
