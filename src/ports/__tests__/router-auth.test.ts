@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { buildRouter } from "../router.js";
 import { InMemoryReminderRepository } from "../../app/use-cases/__tests__/helpers/in-memory-repo.js";
+import { InMemoryPendingPromptRepository } from "../../app/use-cases/__tests__/helpers/in-memory-pending-prompt-repo.js";
 import { Reminder } from "../../domain/reminder.js";
 import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import type { SourceSnapshot } from "../../domain/value-objects/source-snapshot.js";
@@ -37,7 +38,7 @@ describe("Router: non-Owner callbacks silently ignored (AC-09)", () => {
   beforeEach(() => {
     repo = new InMemoryReminderRepository(OWNER_ID, TZ);
     gateway = makeGateway();
-    router = buildRouter(repo, gateway, OWNER_CHAT_ID);
+    router = buildRouter(repo, gateway, OWNER_CHAT_ID, new InMemoryPendingPromptRepository());
   });
 
   function makeNonOwnerCallbackCtx(data: string) {
@@ -102,7 +103,7 @@ describe("Router: dispatch/auth characterization pre-T7 (AC-04b)", () => {
   beforeEach(() => {
     repo = new InMemoryReminderRepository(OWNER_ID, TZ);
     gateway = makeGateway();
-    router = buildRouter(repo, gateway, OWNER_CHAT_ID);
+    router = buildRouter(repo, gateway, OWNER_CHAT_ID, new InMemoryPendingPromptRepository());
   });
 
   function makeForwardedCtx(senderId: number) {
@@ -187,16 +188,18 @@ describe("Router: dispatch/auth characterization pre-T7 (AC-04b)", () => {
 describe("Router: centralized Owner gate at dispatch (T7, ADR-0003, AC-04b)", () => {
   let repo: InMemoryReminderRepository;
   let gateway: TelegramGateway;
+  let pendingPromptRepo: InMemoryPendingPromptRepository;
   let router: ReturnType<typeof buildRouter>;
 
   beforeEach(() => {
     repo = new InMemoryReminderRepository(OWNER_ID, TZ);
     gateway = makeGateway();
-    router = buildRouter(repo, gateway, OWNER_CHAT_ID);
+    pendingPromptRepo = new InMemoryPendingPromptRepository();
+    router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo);
   });
 
-  it("denies custom-time text input from a non-Owner even if pendingCustom has an entry for them", async () => {
-    router.pendingCustom.set(NON_OWNER_ID, { type: "capture", reminderId: 1 });
+  it("denies custom-time text input from a non-Owner even while a pending prompt is set", async () => {
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 1, createdAt: Date.now() });
     const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "awaiting_time" });
     repo.reminders.set(1, r);
 
@@ -213,7 +216,7 @@ describe("Router: centralized Owner gate at dispatch (T7, ADR-0003, AC-04b)", ()
   });
 
   it("Owner: custom-time text input still schedules the reminder (gate does not regress the Owner path)", async () => {
-    router.pendingCustom.set(OWNER_ID, { type: "capture", reminderId: 1 });
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 1, createdAt: Date.now() });
     const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "awaiting_time" });
     repo.reminders.set(1, r);
 

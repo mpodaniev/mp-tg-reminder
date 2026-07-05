@@ -1,6 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import Database from "better-sqlite3";
+import { tmpdir } from "os";
+import { join } from "path";
+import { unlinkSync } from "fs";
 import { parseCustomTime, buildRouter } from "../router.js";
 import { InMemoryReminderRepository } from "../../app/use-cases/__tests__/helpers/in-memory-repo.js";
+import { InMemoryPendingPromptRepository } from "../../app/use-cases/__tests__/helpers/in-memory-pending-prompt-repo.js";
+import { runMigrationsUp } from "../../infra/db/migrate.js";
+import { SqliteReminderRepository } from "../../infra/db/sqlite-reminder-repository.js";
+import { SqlitePendingPromptRepository } from "../../infra/db/sqlite-pending-prompt-repository.js";
 import { Reminder } from "../../domain/reminder.js";
 import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import type { SourceSnapshot } from "../../domain/value-objects/source-snapshot.js";
@@ -132,13 +140,14 @@ describe("parseCustomTime (AC-03/AC-08)", () => {
 describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
   let repo: InMemoryReminderRepository;
   let gateway: TelegramGateway;
+  let pendingPromptRepo: InMemoryPendingPromptRepository;
   let router: ReturnType<typeof buildRouter>;
 
   beforeEach(() => {
     repo = new InMemoryReminderRepository(OWNER_ID, TZ);
     gateway = makeGateway();
-    router = buildRouter(repo, gateway, OWNER_CHAT_ID);
-    router.pendingCustom.clear();
+    pendingPromptRepo = new InMemoryPendingPromptRepository();
+    router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo);
   });
 
   function makeCallbackCtx(data: string) {
@@ -170,14 +179,14 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
     expect(ctx.reply).toHaveBeenCalled();
     const prompt: string = (ctx.reply as any).mock.calls[0][0];
     expect(prompt).toMatch(/час|введіть/i);
-    expect(router.pendingCustom.has(OWNER_CHAT_ID)).toBe(true);
+    expect(await pendingPromptRepo.findPendingPrompt()).not.toBeNull();
   });
 
   it("valid future custom time schedules the reminder (AC-03)", async () => {
     const r = Reminder.reconstitute({ id: 6, snapshot: makeSnapshot(6), state: "awaiting_time" });
     repo.reminders.set(6, r);
 
-    router.pendingCustom.set(OWNER_CHAT_ID, { type: "capture", reminderId: 6 });
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 6, createdAt: Date.now() });
 
     const ctx = makeTextCtx("20.06.2030 15:00");
     await router.handleUpdate(ctx as any);
@@ -188,21 +197,21 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
     expect(ctx.reply).toHaveBeenCalled();
     const confirmMsg: string = (ctx.reply as any).mock.calls[0][0];
     expect(confirmMsg).toMatch(/заплановано/i);
-    expect(router.pendingCustom.has(OWNER_CHAT_ID)).toBe(false);
+    expect(await pendingPromptRepo.findPendingPrompt()).toBeNull();
   });
 
   it("past custom time is rejected and prompt stays open (AC-08)", async () => {
     const r = Reminder.reconstitute({ id: 7, snapshot: makeSnapshot(7), state: "awaiting_time" });
     repo.reminders.set(7, r);
 
-    router.pendingCustom.set(OWNER_CHAT_ID, { type: "capture", reminderId: 7 });
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 7, createdAt: Date.now() });
 
     const ctx = makeTextCtx("01.01.2020 09:00");
     await router.handleUpdate(ctx as any);
 
     const updated = await repo.findById(7);
     expect(updated!.state).toBe("awaiting_time");
-    expect(router.pendingCustom.has(OWNER_CHAT_ID)).toBe(true);
+    expect(await pendingPromptRepo.findPendingPrompt()).not.toBeNull();
     const errMsg: string = (ctx.reply as any).mock.calls[0][0];
     expect(errMsg).toMatch(/майбутн|future/i);
   });
@@ -211,7 +220,7 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
     const r = Reminder.reconstitute({ id: 9, snapshot: makeSnapshot(9), state: "done" });
     repo.reminders.set(9, r);
 
-    router.pendingCustom.set(OWNER_CHAT_ID, { type: "snooze", reminderId: 9 });
+    await pendingPromptRepo.savePendingPrompt({ type: "snooze", reminderId: 9, createdAt: Date.now() });
 
     const ctx = makeTextCtx("20.06.2030 15:00");
     await router.handleUpdate(ctx as any);
@@ -228,15 +237,79 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
     const r = Reminder.reconstitute({ id: 8, snapshot: makeSnapshot(8), state: "awaiting_time" });
     repo.reminders.set(8, r);
 
-    router.pendingCustom.set(OWNER_CHAT_ID, { type: "capture", reminderId: 8 });
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 8, createdAt: Date.now() });
 
     const ctx = makeTextCtx("некоректний текст");
     await router.handleUpdate(ctx as any);
 
     const updated = await repo.findById(8);
     expect(updated!.state).toBe("awaiting_time");
-    expect(router.pendingCustom.has(OWNER_CHAT_ID)).toBe(true);
+    expect(await pendingPromptRepo.findPendingPrompt()).not.toBeNull();
     const errMsg: string = (ctx.reply as any).mock.calls[0][0];
     expect(errMsg).toMatch(/не вдалося|не розпізнати/i);
+  });
+});
+
+// T8 (AC-05): a pending prompt must survive an idle-stop/restart cycle — the
+// durable replacement for the old in-memory pendingCustom map. Two entirely
+// fresh repository instances (simulating a new process) backed by the same
+// SQLite DB file prove the prompt set before "restart" is honored after.
+describe("Router: pending prompt survives a process restart (T8, AC-05)", () => {
+  let dbPath: string;
+  let db: Database.Database;
+
+  beforeEach(() => {
+    dbPath = join(tmpdir(), `test-router-restart-${Date.now()}-${Math.random()}.db`);
+    db = new Database(dbPath);
+    runMigrationsUp(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    try { unlinkSync(dbPath); } catch {}
+  });
+
+  it("a pending prompt set before restart is still recognized after (new repo instances, same DB)", async () => {
+    const reminderRepo1 = new SqliteReminderRepository(db);
+    await reminderRepo1.upsertOwnerSettings(OWNER_ID, TZ);
+
+    const snapshotInput = {
+      chatId: 100, messageId: 201, chatUsername: null, senderName: null,
+      senderUsername: null, messageText: "test", mediaFileId: null,
+      mediaType: null, isMediaProtected: false, createdAt: Date.now(),
+    };
+    const created = await reminderRepo1.saveWithSnapshot(
+      snapshotInput,
+      Reminder.create({ snapshot: { ...snapshotInput, id: 0 } })
+    );
+
+    const pendingPromptRepo1 = new SqlitePendingPromptRepository(db);
+    const gateway = makeGateway();
+    const router1 = buildRouter(reminderRepo1, gateway, OWNER_ID, pendingPromptRepo1);
+
+    const ctx1 = {
+      from: { id: OWNER_ID },
+      callbackQuery: { id: "cq1", data: `qpick:${created.id}:custom` },
+      answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+    await router1.handleUpdate(ctx1 as any);
+    expect(await pendingPromptRepo1.findPendingPrompt()).not.toBeNull();
+
+    // "restart": brand-new repository instances, same underlying DB file.
+    const reminderRepo2 = new SqliteReminderRepository(db);
+    const pendingPromptRepo2 = new SqlitePendingPromptRepository(db);
+    const router2 = buildRouter(reminderRepo2, gateway, OWNER_ID, pendingPromptRepo2);
+
+    const ctx2 = {
+      from: { id: OWNER_ID },
+      message: { text: "за 2 год" },
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+    await router2.handleUpdate(ctx2 as any);
+
+    const updated = await reminderRepo2.findById(created.id!);
+    expect(updated!.state).toBe("pending");
+    expect(await pendingPromptRepo2.findPendingPrompt()).toBeNull();
   });
 });

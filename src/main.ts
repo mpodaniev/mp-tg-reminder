@@ -1,6 +1,7 @@
 import { Bot } from "grammy";
 import { openDb } from "./infra/db/open-db.js";
 import { SqliteReminderRepository } from "./infra/db/sqlite-reminder-repository.js";
+import { SqlitePendingPromptRepository } from "./infra/db/sqlite-pending-prompt-repository.js";
 import { GrammyTelegramGateway } from "./infra/telegram/grammy-telegram-gateway.js";
 import { FireDueReminders } from "./app/use-cases/fire-due-reminders.js";
 import { ExpireStalePrompts } from "./app/use-cases/expire-stale-prompts.js";
@@ -22,6 +23,7 @@ if (isNaN(OWNER_TELEGRAM_ID)) {
 
 const db = openDb(DB_PATH);
 const repo = new SqliteReminderRepository(db);
+const pendingPromptRepo = new SqlitePendingPromptRepository(db);
 
 // Bootstrap owner settings if not present
 const existing = await repo.getOwnerSettings();
@@ -46,7 +48,7 @@ const OWNER_CHAT_ID = OWNER_TELEGRAM_ID;
 const fireUC = new FireDueReminders(repo, gateway, OWNER_CHAT_ID);
 const expireUC = new ExpireStalePrompts(repo);
 const scheduler = new Scheduler(fireUC, expireUC, 24 * 60 * 60 * 1000);
-const router = buildRouter(repo, gateway, OWNER_CHAT_ID);
+const router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo);
 
 // Register the /list command in the Telegram command menu, scoped to the Owner's
 // chat so it is never offered to other users (owner-only posture, AC-05/AC-07).

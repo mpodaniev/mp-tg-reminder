@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { buildRouter } from "../router.js";
 import { InMemoryReminderRepository } from "../../app/use-cases/__tests__/helpers/in-memory-repo.js";
+import { InMemoryPendingPromptRepository } from "../../app/use-cases/__tests__/helpers/in-memory-pending-prompt-repo.js";
 import { Reminder } from "../../domain/reminder.js";
 import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import type { SourceSnapshot } from "../../domain/value-objects/source-snapshot.js";
@@ -36,7 +37,7 @@ describe("Router: quick-pick on a stale (no longer awaiting_time) reminder", () 
 
   beforeEach(() => {
     repo = new InMemoryReminderRepository(OWNER_ID, TZ);
-    router = buildRouter(repo, makeGateway(), OWNER_ID);
+    router = buildRouter(repo, makeGateway(), OWNER_ID, new InMemoryPendingPromptRepository());
   });
 
   function qpickCtx(fromId: number, reminderId: number, pick: string) {
