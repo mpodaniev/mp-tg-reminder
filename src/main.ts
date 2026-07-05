@@ -7,10 +7,17 @@ import { FireDueReminders } from "./app/use-cases/fire-due-reminders.js";
 import { ExpireStalePrompts } from "./app/use-cases/expire-stale-prompts.js";
 import { Scheduler } from "./scheduler/scheduler.js";
 import { buildRouter } from "./ports/router.js";
+import { buildHttpServer } from "./ports/http/server.js";
+import { buildWebhookHandler } from "./ports/http/webhook-handler.js";
+import { buildWakeHandler } from "./ports/http/wake-handler.js";
 
 const BOT_TOKEN = process.env["BOT_TOKEN"];
 const OWNER_TELEGRAM_ID = parseInt(process.env["OWNER_TELEGRAM_ID"] ?? "", 10);
 const DB_PATH = process.env["DB_PATH"] ?? "./data/reminders.db";
+const PORT = parseInt(process.env["PORT"] ?? "3000", 10);
+const WEBHOOK_URL = process.env["WEBHOOK_URL"];
+const WEBHOOK_SECRET_TOKEN = process.env["WEBHOOK_SECRET_TOKEN"];
+const WAKE_BEARER_TOKEN = process.env["WAKE_BEARER_TOKEN"];
 
 if (!BOT_TOKEN) {
   console.error("BOT_TOKEN is required");
@@ -18,6 +25,18 @@ if (!BOT_TOKEN) {
 }
 if (isNaN(OWNER_TELEGRAM_ID)) {
   console.error("OWNER_TELEGRAM_ID must be a valid integer");
+  process.exit(1);
+}
+if (!WEBHOOK_URL) {
+  console.error("WEBHOOK_URL is required (e.g. https://<fly-app>.fly.dev/webhook/telegram)");
+  process.exit(1);
+}
+if (!WEBHOOK_SECRET_TOKEN) {
+  console.error("WEBHOOK_SECRET_TOKEN is required");
+  process.exit(1);
+}
+if (!WAKE_BEARER_TOKEN) {
+  console.error("WAKE_BEARER_TOKEN is required");
   process.exit(1);
 }
 
@@ -73,18 +92,30 @@ bot.catch((err) => {
   console.error({ module: "bot", event: "error", error: err.message });
 });
 
-await bot.start();
+// Webhook mode (ADR-0001/ADR-0002): no long-polling, no in-process timer — the
+// machine can fully idle between an inbound webhook update and the next
+// external wake call. bot.init() fetches bot info once; bot.handleUpdate()
+// feeds each verified webhook body into the same grammy Context + router
+// dispatch that bot.start() would have used under long-polling.
+await bot.init();
+await bot.api.setWebhook(WEBHOOK_URL, { secret_token: WEBHOOK_SECRET_TOKEN });
 
-process.on("SIGTERM", () => {
+const httpServer = buildHttpServer({
+  webhook: buildWebhookHandler({ handleUpdate: (update) => bot.handleUpdate(update as never) }, WEBHOOK_SECRET_TOKEN),
+  wake: buildWakeHandler(scheduler, WAKE_BEARER_TOKEN),
+});
+
+httpServer.listen(PORT, () => {
+  console.log({ module: "http", event: "listening", port: PORT });
+});
+
+function shutdown(): void {
+  httpServer.close();
   void scheduler.stop().then(() => {
     db.close();
     process.exit(0);
   });
-});
+}
 
-process.on("SIGINT", () => {
-  void scheduler.stop().then(() => {
-    db.close();
-    process.exit(0);
-  });
-});
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

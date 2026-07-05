@@ -17,7 +17,7 @@
 | T10 | `node:http` server skeleton + route dispatch | ports | Mykhailo Podaniev | M | — | done |
 | T11 | Webhook handler (secretToken verification) | ports | Mykhailo Podaniev | M | T7, T10 | done |
 | T12 | Wake handler (constant-time bearer verification) | ports | Mykhailo Podaniev | M | T4, T10 | done |
-| T13 | Wire composition root + webhook mode + graceful shutdown | wiring | Mykhailo Podaniev | M | T8, T9, T11, T12 | todo |
+| T13 | Wire composition root + webhook mode + graceful shutdown | wiring | Mykhailo Podaniev | M | T8, T9, T11, T12 | done |
 | T14 | Integration tests: perimeter + catch-up | tests | Mykhailo Podaniev | M | T13 | todo |
 | T15 | Document the deployment setup | docs | Mykhailo Podaniev | S | T13 | todo |
 
