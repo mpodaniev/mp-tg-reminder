@@ -15,7 +15,7 @@
 | T8 | Durable pending-prompt in router (replace in-memory map) | ports | Mykhailo Podaniev | M | T3, T7 | done |
 | T9 | Wake-interval delay estimate on confirmation | app | Mykhailo Podaniev | S | — | done |
 | T10 | `node:http` server skeleton + route dispatch | ports | Mykhailo Podaniev | M | — | done |
-| T11 | Webhook handler (secretToken verification) | ports | Mykhailo Podaniev | M | T7, T10 | todo |
+| T11 | Webhook handler (secretToken verification) | ports | Mykhailo Podaniev | M | T7, T10 | done |
 | T12 | Wake handler (constant-time bearer verification) | ports | Mykhailo Podaniev | M | T4, T10 | todo |
 | T13 | Wire composition root + webhook mode + graceful shutdown | wiring | Mykhailo Podaniev | M | T8, T9, T11, T12 | todo |
 | T14 | Integration tests: perimeter + catch-up | tests | Mykhailo Podaniev | M | T13 | todo |
