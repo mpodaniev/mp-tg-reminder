@@ -19,7 +19,7 @@ afterAll(() => {
 });
 
 describe("migration runner", () => {
-  it("applies all 3 up-migrations cleanly", () => {
+  it("applies all 4 up-migrations cleanly", () => {
     runMigrationsUp(db);
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
@@ -28,6 +28,7 @@ describe("migration runner", () => {
     expect(names).toContain("owner_settings");
     expect(names).toContain("source_snapshots");
     expect(names).toContain("reminders");
+    expect(names).toContain("pending_prompt");
     expect(names).toContain("_migrations");
   });
 
