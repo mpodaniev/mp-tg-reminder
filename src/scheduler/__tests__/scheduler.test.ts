@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Scheduler } from "../scheduler.js";
 import { FireDueReminders } from "../../app/use-cases/fire-due-reminders.js";
 import { ExpireStalePrompts } from "../../app/use-cases/expire-stale-prompts.js";
@@ -7,7 +7,6 @@ import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 
 const OWNER_ID = 123456789;
 const CHAT_ID = 777;
-const TICK_MS = 50;
 const EXPIRE_CUTOFF_MS = 24 * 60 * 60 * 1000;
 
 function makeFakeGateway(): TelegramGateway {
@@ -27,39 +26,51 @@ describe("Scheduler", () => {
   let expireUC: ExpireStalePrompts;
   let scheduler: Scheduler;
 
-  beforeEach(() => {
+  function setup() {
     repo = new InMemoryReminderRepository(OWNER_ID, "Europe/Kyiv");
     gateway = makeFakeGateway();
     fireUC = new FireDueReminders(repo, gateway, CHAT_ID);
     expireUC = new ExpireStalePrompts(repo);
-    scheduler = new Scheduler(fireUC, expireUC, TICK_MS, EXPIRE_CUTOFF_MS);
-  });
+    scheduler = new Scheduler(fireUC, expireUC, EXPIRE_CUTOFF_MS);
+  }
 
-  afterEach(() => {
-    scheduler.stop();
-  });
-
-  it("start() triggers FireDueReminders each tick", async () => {
+  it("tick() is a public method that resolves after fire+expire complete", async () => {
+    setup();
     const fireSpy = vi.spyOn(fireUC, "execute").mockResolvedValue(undefined);
-    scheduler.start();
-    await new Promise((resolve) => setTimeout(resolve, TICK_MS * 2 + 20));
-    expect(fireSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("ExpireStalePrompts is called each tick", async () => {
     const expireSpy = vi.spyOn(expireUC, "execute").mockResolvedValue(undefined);
-    scheduler.start();
-    await new Promise((resolve) => setTimeout(resolve, TICK_MS * 2 + 20));
-    expect(expireSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    await scheduler.tick();
+
+    expect(fireSpy).toHaveBeenCalledTimes(1);
+    expect(expireSpy).toHaveBeenCalledWith(EXPIRE_CUTOFF_MS);
   });
 
-  it("stop() halts ticks cleanly", async () => {
-    const fireSpy = vi.spyOn(fireUC, "execute").mockResolvedValue(undefined);
-    scheduler.start();
-    await new Promise((resolve) => setTimeout(resolve, TICK_MS + 10));
-    scheduler.stop();
-    const callsAfterStop = fireSpy.mock.calls.length;
-    await new Promise((resolve) => setTimeout(resolve, TICK_MS * 3));
-    expect(fireSpy.mock.calls.length).toBe(callsAfterStop);
+  it("stop() called mid-tick resolves only after the in-flight tick finishes", async () => {
+    setup();
+    let releaseFire: () => void = () => {};
+    const fireGate = new Promise<void>((resolve) => {
+      releaseFire = resolve;
+    });
+    vi.spyOn(fireUC, "execute").mockImplementation(() => fireGate);
+    vi.spyOn(expireUC, "execute").mockResolvedValue(undefined);
+
+    const tickPromise = scheduler.tick();
+    let stopResolved = false;
+    const stopPromise = scheduler.stop().then(() => {
+      stopResolved = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(stopResolved).toBe(false);
+
+    releaseFire();
+    await tickPromise;
+    await stopPromise;
+    expect(stopResolved).toBe(true);
+  });
+
+  it("has no setInterval-based start() method (ADR-0001: wake call is the sole trigger)", () => {
+    setup();
+    expect((scheduler as unknown as { start?: unknown }).start).toBeUndefined();
   });
 });

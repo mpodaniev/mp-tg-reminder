@@ -10,10 +10,6 @@ import { buildRouter } from "./ports/router.js";
 const BOT_TOKEN = process.env["BOT_TOKEN"];
 const OWNER_TELEGRAM_ID = parseInt(process.env["OWNER_TELEGRAM_ID"] ?? "", 10);
 const DB_PATH = process.env["DB_PATH"] ?? "./data/reminders.db";
-const SCHEDULER_INTERVAL_MS = parseInt(
-  process.env["SCHEDULER_INTERVAL_MS"] ?? "15000",
-  10
-);
 
 if (!BOT_TOKEN) {
   console.error("BOT_TOKEN is required");
@@ -49,7 +45,7 @@ const gateway = new GrammyTelegramGateway({
 const OWNER_CHAT_ID = OWNER_TELEGRAM_ID;
 const fireUC = new FireDueReminders(repo, gateway, OWNER_CHAT_ID);
 const expireUC = new ExpireStalePrompts(repo);
-const scheduler = new Scheduler(fireUC, expireUC, SCHEDULER_INTERVAL_MS, 24 * 60 * 60 * 1000);
+const scheduler = new Scheduler(fireUC, expireUC, 24 * 60 * 60 * 1000);
 const router = buildRouter(repo, gateway, OWNER_CHAT_ID);
 
 // Register the /list command in the Telegram command menu, scoped to the Owner's
@@ -75,17 +71,18 @@ bot.catch((err) => {
   console.error({ module: "bot", event: "error", error: err.message });
 });
 
-scheduler.start();
 await bot.start();
 
 process.on("SIGTERM", () => {
-  scheduler.stop();
-  db.close();
-  process.exit(0);
+  void scheduler.stop().then(() => {
+    db.close();
+    process.exit(0);
+  });
 });
 
 process.on("SIGINT", () => {
-  scheduler.stop();
-  db.close();
-  process.exit(0);
+  void scheduler.stop().then(() => {
+    db.close();
+    process.exit(0);
+  });
 });
