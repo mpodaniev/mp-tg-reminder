@@ -32,10 +32,14 @@ export function buildRouter(
   repo: ReminderRepository,
   gateway: TelegramGateway,
   ownerChatId: number,
-  pendingPromptRepo: PendingPromptRepository
+  pendingPromptRepo: PendingPromptRepository,
+  wakeIntervalMs?: number
 ) {
   const captureUC = new CaptureMessage(repo);
-  const scheduleUC = new ScheduleReminder(repo);
+  // The wake interval driving the AC-03 delay estimate is threaded from the
+  // composition root so it tracks the deployed external cron cadence rather
+  // than a compile-time constant; falls back to ScheduleReminder's default.
+  const scheduleUC = new ScheduleReminder(repo, wakeIntervalMs);
   const snoozeUC = new SnoozeReminder(repo);
   const resolveUC = new ResolveReminder(repo);
   const listUC = new ListActiveReminders(repo);

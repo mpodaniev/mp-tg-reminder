@@ -17,6 +17,7 @@ next inbound request.
 | `WEBHOOK_URL` | `https://mp-tg-reminder.fly.dev/webhook/telegram` | The public URL Telegram will POST updates to; registered via `setWebhook` on every boot |
 | `WEBHOOK_SECRET_TOKEN` | a random 32+ char string | Verified against Telegram's `X-Telegram-Bot-Api-Secret-Token` header (constant-time compare); reject 401 if missing/wrong (AC-04) |
 | `WAKE_BEARER_TOKEN` | a random 32+ char string | Static bearer token the external scheduler sends as `Authorization: Bearer <token>` when calling `POST /wake`; verified constant-time (AC-04) |
+| `WAKE_INTERVAL_MS` | `180000` (optional; default 3 min) | The external scheduler's wake cadence in ms — drives the AC-03 "delivery may be late" estimate. **Keep this equal to the interval the external cron actually uses** so the estimate the Owner sees matches reality; if you retune the cron, update this too |
 
 Generate the two secret tokens once, e.g.:
 

@@ -18,6 +18,10 @@ const PORT = parseInt(process.env["PORT"] ?? "3000", 10);
 const WEBHOOK_URL = process.env["WEBHOOK_URL"];
 const WEBHOOK_SECRET_TOKEN = process.env["WEBHOOK_SECRET_TOKEN"];
 const WAKE_BEARER_TOKEN = process.env["WAKE_BEARER_TOKEN"];
+// The AC-03 delivery-delay estimate must reflect the external scheduler's real
+// cadence, so it shares one config value with the cron that calls POST /wake.
+// Keep this in sync with that scheduler's interval (sad.md §7 default: 3 min).
+const WAKE_INTERVAL_MS = parseInt(process.env["WAKE_INTERVAL_MS"] ?? "", 10) || 3 * 60 * 1000;
 
 if (!BOT_TOKEN) {
   console.error("BOT_TOKEN is required");
@@ -67,7 +71,7 @@ const OWNER_CHAT_ID = OWNER_TELEGRAM_ID;
 const fireUC = new FireDueReminders(repo, gateway, OWNER_CHAT_ID);
 const expireUC = new ExpireStalePrompts(repo);
 const scheduler = new Scheduler(fireUC, expireUC, 24 * 60 * 60 * 1000);
-const router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo);
+const router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo, WAKE_INTERVAL_MS);
 
 // Register the /list command in the Telegram command menu, scoped to the Owner's
 // chat so it is never offered to other users (owner-only posture, AC-05/AC-07).
