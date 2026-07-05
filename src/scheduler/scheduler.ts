@@ -11,6 +11,13 @@ export class Scheduler {
   ) {}
 
   async tick(): Promise<void> {
+    // Single-flight: an overlapping call (a network retry, or two wake calls
+    // racing) joins the already-running tick instead of starting a second
+    // FireDueReminders pass, which would otherwise read the same pending
+    // reminder before the first pass's "firing" write lands and double-send
+    // it (AC-06, spec §6.1 "a wake request that arrives twice").
+    if (this.inFlight) return this.inFlight;
+
     const run = this.runTick();
     this.inFlight = run;
     try {

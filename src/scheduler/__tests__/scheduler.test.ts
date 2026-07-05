@@ -45,6 +45,27 @@ describe("Scheduler", () => {
     expect(expireSpy).toHaveBeenCalledWith(EXPIRE_CUTOFF_MS);
   });
 
+  it("coalesces overlapping tick() calls into a single run (AC-06: a wake retry never double-fires)", async () => {
+    setup();
+    let releaseFire: () => void = () => {};
+    const fireGate = new Promise<void>((resolve) => {
+      releaseFire = resolve;
+    });
+    const fireSpy = vi.spyOn(fireUC, "execute").mockImplementation(() => fireGate);
+    const expireSpy = vi.spyOn(expireUC, "execute").mockResolvedValue(undefined);
+
+    // Two overlapping wake calls while the first tick is still in flight.
+    const first = scheduler.tick();
+    const second = scheduler.tick();
+
+    releaseFire();
+    await Promise.all([first, second]);
+
+    // Only one fire/expire pass ran, even though tick() was called twice.
+    expect(fireSpy).toHaveBeenCalledTimes(1);
+    expect(expireSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("stop() called mid-tick resolves only after the in-flight tick finishes", async () => {
     setup();
     let releaseFire: () => void = () => {};
