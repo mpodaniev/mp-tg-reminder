@@ -86,3 +86,94 @@ describe("Router: non-Owner callbacks silently ignored (AC-09)", () => {
     expect(updated!.state).toBe("awaiting_time");
   });
 });
+
+// T6 (AC-04b): characterizes every handleUpdate path's *current* auth behavior
+// before the T7 refactor centralizes a single isOwner() gate at dispatch. Each
+// path enforces ownership today through a different mechanism (or none at all
+// for the callback_query branch above, which checks ctx.from.id === ownerChatId
+// inline) — these tests pin exactly what happens today so T7 can prove it
+// preserved every Owner-sender behavior while unifying (and, for forwarded
+// messages, actually adding) the gate.
+describe("Router: dispatch/auth characterization pre-T7 (AC-04b)", () => {
+  let repo: InMemoryReminderRepository;
+  let gateway: TelegramGateway;
+  let router: ReturnType<typeof buildRouter>;
+
+  beforeEach(() => {
+    repo = new InMemoryReminderRepository(OWNER_ID, TZ);
+    gateway = makeGateway();
+    router = buildRouter(repo, gateway, OWNER_CHAT_ID);
+  });
+
+  function makeForwardedCtx(senderId: number) {
+    return {
+      from: { id: senderId },
+      message: {
+        forward_date: 1700000000,
+        message_id: 55,
+        chat: { id: 100, username: "chat" },
+        text: "forwarded text",
+      },
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("Owner: forwarded message is captured and a quick-pick reply is sent", async () => {
+    const ctx = makeForwardedCtx(OWNER_ID);
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(repo.reminders.size).toBe(1);
+  });
+
+  it("non-Owner: forwarded message is silently rejected today (CaptureMessage's own UnauthorizedError check) — no reminder, no reply", async () => {
+    const ctx = makeForwardedCtx(NON_OWNER_ID);
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(repo.reminders.size).toBe(0);
+  });
+
+  function makeCommandCtx(senderId: number, text: string) {
+    return {
+      from: { id: senderId },
+      message: { text },
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("Owner: /settings with no args replies with the current timezone", async () => {
+    const ctx = makeCommandCtx(OWNER_ID, "/settings");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+  });
+
+  it("non-Owner: /settings is a silent no-op today (settings-handler's own ownerTelegramId check)", async () => {
+    const ctx = makeCommandCtx(NON_OWNER_ID, "/settings");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+  });
+
+  it("Owner: /list replies with the active-reminders view", async () => {
+    const ctx = makeCommandCtx(OWNER_ID, "/list");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+  });
+
+  it("non-Owner: /list is a silent no-op today (list-handler's own isOwner() check)", async () => {
+    const ctx = makeCommandCtx(NON_OWNER_ID, "/list");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+  });
+
+  it("non-Owner: plain text with no pending prompt is a silent no-op (pendingCustom is only ever keyed by ownerChatId today)", async () => {
+    const ctx = makeCommandCtx(NON_OWNER_ID, "за 2 год");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+  });
+});
