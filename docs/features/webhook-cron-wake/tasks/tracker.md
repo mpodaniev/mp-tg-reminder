@@ -5,7 +5,7 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T1 | Promote and validate the staged `pending_prompt` migration | migration | Mykhailo Podaniev | S | — | todo |
+| T1 | Promote and validate the staged `pending_prompt` migration | migration | Mykhailo Podaniev | S | — | done |
 | T2 | Add the `PendingPromptRepository` port interface | app | Mykhailo Podaniev | S | — | todo |
 | T3 | Implement `PendingPromptRepository` against SQLite | infra | Mykhailo Podaniev | M | T1, T2 | todo |
 | T4 | Make `Scheduler.tick()` public + awaitable; `stop()` drains | app | Mykhailo Podaniev | S | — | todo |
