@@ -53,4 +53,17 @@ describe("buildHttpServer (ADR-0002, AC-04)", () => {
     expect(res.status).toBe(404);
     expect(webhookHandler).not.toHaveBeenCalled();
   });
+
+  it("returns 500 and closes the connection when a handler throws (NFR §6 processing success)", async () => {
+    const errorConsole = vi.spyOn(console, "error").mockImplementation(() => {});
+    wakeHandler.mockImplementationOnce(async () => {
+      throw new Error("tick blew up");
+    });
+
+    const res = await fetch(`${baseUrl}/wake`, { method: "POST" });
+
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toEqual({ code: "http.internal_error", message: "Internal error" });
+    errorConsole.mockRestore();
+  });
 });
