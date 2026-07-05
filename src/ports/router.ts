@@ -14,6 +14,7 @@ import { ListActiveReminders } from "../app/use-cases/list-active-reminders.js";
 import { CancelPendingReminder } from "../app/use-cases/cancel-pending-reminder.js";
 import { localTodayAt } from "./tz-utils.js";
 import { AlreadyResolvedError, InvalidStateTransitionError, ReminderNotFoundError } from "../domain/errors.js";
+import { isOwner } from "./middleware/auth-middleware.js";
 
 export type PendingCustom = { type: "capture" | "snooze"; reminderId: number };
 const pendingCustom = new Map<number, PendingCustom>();
@@ -39,6 +40,14 @@ export function buildRouter(
     pendingCustom,
 
     async handleUpdate(ctx: any) {
+      // Single Owner-auth gate for every path (ADR-0003, AC-04b) — a non-Owner
+      // sender is denied here, before any handler dispatch, so a future handler
+      // is Owner-gated by construction instead of needing its own check.
+      const senderId: number | undefined = ctx.from?.id ?? ctx.message?.from?.id;
+      if (!(await isOwner(senderId, repo))) {
+        return;
+      }
+
       const msg = ctx.message;
 
       if (msg?.text?.startsWith("/settings")) {
@@ -54,17 +63,11 @@ export function buildRouter(
       }
 
       // Handle pending custom-time text input
-      const senderId: number | undefined = ctx.from?.id ?? ctx.message?.from?.id;
       if (msg?.text && senderId && pendingCustom.has(senderId)) {
         return handleCustomTimeInput(ctx, scheduleUC, snoozeUC, repo, gateway, ownerChatId, senderId);
       }
 
       if (ctx.callbackQuery) {
-        const callbackSenderId: number | undefined = ctx.from?.id;
-        if (callbackSenderId !== ownerChatId) {
-          return;
-        }
-
         const data: string = ctx.callbackQuery.data ?? "";
         const parts = data.split(":");
         const action = parts[0];

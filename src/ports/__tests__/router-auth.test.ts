@@ -177,3 +177,55 @@ describe("Router: dispatch/auth characterization pre-T7 (AC-04b)", () => {
     expect(ctx.reply).not.toHaveBeenCalled();
   });
 });
+
+// T7 (ADR-0003, AC-04b): the router-level gate must deny a non-Owner sender on
+// every path, not rely on the pendingCustom map happening to only ever be
+// keyed by the Owner's id. This proves the exact gap ADR-0003 names at
+// src/ports/router.ts:56-59 — before the gate, forcing a pendingCustom entry
+// for a non-Owner id (as a future bug or race could) let their custom-time
+// text through; after the gate, the sender is denied before that check ever runs.
+describe("Router: centralized Owner gate at dispatch (T7, ADR-0003, AC-04b)", () => {
+  let repo: InMemoryReminderRepository;
+  let gateway: TelegramGateway;
+  let router: ReturnType<typeof buildRouter>;
+
+  beforeEach(() => {
+    repo = new InMemoryReminderRepository(OWNER_ID, TZ);
+    gateway = makeGateway();
+    router = buildRouter(repo, gateway, OWNER_CHAT_ID);
+  });
+
+  it("denies custom-time text input from a non-Owner even if pendingCustom has an entry for them", async () => {
+    router.pendingCustom.set(NON_OWNER_ID, { type: "capture", reminderId: 1 });
+    const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "awaiting_time" });
+    repo.reminders.set(1, r);
+
+    const ctx = {
+      from: { id: NON_OWNER_ID },
+      message: { text: "за 2 год" },
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+    const updated = await repo.findById(1);
+    expect(updated!.state).toBe("awaiting_time");
+  });
+
+  it("Owner: custom-time text input still schedules the reminder (gate does not regress the Owner path)", async () => {
+    router.pendingCustom.set(OWNER_ID, { type: "capture", reminderId: 1 });
+    const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "awaiting_time" });
+    repo.reminders.set(1, r);
+
+    const ctx = {
+      from: { id: OWNER_ID },
+      message: { text: "за 2 год" },
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const updated = await repo.findById(1);
+    expect(updated!.state).toBe("pending");
+  });
+});
