@@ -10,9 +10,15 @@ feature_size: "M"
 
 > Single new entity: the durable "awaiting custom time" prompt (spec AC-05, sad.md §5 decision 2)
 > replacing the in-memory `pendingCustom` map (`src/ports/router.ts:19`). No other schema change —
-> reminder delivery idempotency (AC-06) is already covered by the existing `reminders.delivered_at`
-> column (ADR-0005) plus the graceful-shutdown drain (sad.md §4 decision 5); no new column needed
-> there. `owner_settings`, `source_snapshots`, `reminders` are unchanged.
+> reminder delivery idempotency (AC-06) is enforced by the existing `reminders` **state machine**:
+> `findDuePending` selects only `state = 'pending'` and `findFiring` only `state = 'firing'`, so an
+> occurrence already recorded `fired` is excluded from both and never re-sent, even on a retried
+> wake call. The graceful-shutdown drain (sad.md §4 decision 5) narrows the residual race window
+> between a successful send and the `markFired` write; within that window a `firing` occurrence is
+> re-sent by `findFiring` (favoring redelivery), the accepted at-least-once trade-off from ADR-0005.
+> `delivered_at` / `fired_message_id` are persisted for the audit trail but are **not** the skip
+> guard — the state value is. No new column needed. `owner_settings`, `source_snapshots`,
+> `reminders` are unchanged.
 
 ## ER diagram
 
