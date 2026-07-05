@@ -9,7 +9,7 @@
 | T2 | Add the `PendingPromptRepository` port interface | app | Mykhailo Podaniev | S | — | done |
 | T3 | Implement `PendingPromptRepository` against SQLite | infra | Mykhailo Podaniev | M | T1, T2 | done |
 | T4 | Make `Scheduler.tick()` public + awaitable; `stop()` drains | app | Mykhailo Podaniev | S | — | done |
-| T5 | Idempotent-retry tests for `FireDueReminders` | tests | Mykhailo Podaniev | M | T4 | todo |
+| T5 | Idempotent-retry tests for `FireDueReminders` | tests | Mykhailo Podaniev | M | T4 | done |
 | T6 | Characterize today's router dispatch/auth behavior | tests | Mykhailo Podaniev | M | — | todo |
 | T7 | Centralize Owner-auth gate at router dispatch | ports | Mykhailo Podaniev | M | T6 | todo |
 | T8 | Durable pending-prompt in router (replace in-memory map) | ports | Mykhailo Podaniev | M | T3, T7 | todo |
