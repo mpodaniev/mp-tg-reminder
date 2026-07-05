@@ -18,7 +18,7 @@
 | T11 | Webhook handler (secretToken verification) | ports | Mykhailo Podaniev | M | T7, T10 | done |
 | T12 | Wake handler (constant-time bearer verification) | ports | Mykhailo Podaniev | M | T4, T10 | done |
 | T13 | Wire composition root + webhook mode + graceful shutdown | wiring | Mykhailo Podaniev | M | T8, T9, T11, T12 | done |
-| T14 | Integration tests: perimeter + catch-up | tests | Mykhailo Podaniev | M | T13 | todo |
+| T14 | Integration tests: perimeter + catch-up | tests | Mykhailo Podaniev | M | T13 | done |
 | T15 | Document the deployment setup | docs | Mykhailo Podaniev | S | T13 | todo |
 
 **Total:** 15 tasks, ~9 person-days (solo, per sad.md §2 "no team" — feature_size M, 1–2 sprints).
