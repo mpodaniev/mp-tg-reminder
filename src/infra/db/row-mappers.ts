@@ -1,6 +1,7 @@
 import { Reminder } from "../../domain/reminder.js";
 import type { SourceSnapshot } from "../../domain/value-objects/source-snapshot.js";
 import type { OwnerSettingsRow } from "../../app/ports/reminder-repository.js";
+import type { PendingPromptRow, PendingPromptType } from "../../app/ports/pending-prompt-repository.js";
 
 export interface ReminderDbRow {
   id: number;
@@ -71,6 +72,21 @@ export function ownerSettingsRowToVO(row: OwnerSettingsDbRow): OwnerSettingsRow 
     id: 1,
     ownerTelegramId: row.owner_telegram_id,
     timezone: row.timezone,
+    createdAt: row.created_at,
+  };
+}
+
+export interface PendingPromptDbRow {
+  id: 1;
+  type: string;
+  reminder_id: number;
+  created_at: number;
+}
+
+export function pendingPromptRowToVO(row: PendingPromptDbRow): PendingPromptRow {
+  return {
+    type: row.type as PendingPromptType,
+    reminderId: row.reminder_id,
     createdAt: row.created_at,
   };
 }

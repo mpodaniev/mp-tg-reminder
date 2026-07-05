@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|
 | T1 | Promote and validate the staged `pending_prompt` migration | migration | Mykhailo Podaniev | S | — | done |
 | T2 | Add the `PendingPromptRepository` port interface | app | Mykhailo Podaniev | S | — | done |
-| T3 | Implement `PendingPromptRepository` against SQLite | infra | Mykhailo Podaniev | M | T1, T2 | todo |
+| T3 | Implement `PendingPromptRepository` against SQLite | infra | Mykhailo Podaniev | M | T1, T2 | done |
 | T4 | Make `Scheduler.tick()` public + awaitable; `stop()` drains | app | Mykhailo Podaniev | S | — | todo |
 | T5 | Idempotent-retry tests for `FireDueReminders` | tests | Mykhailo Podaniev | M | T4 | todo |
 | T6 | Characterize today's router dispatch/auth behavior | tests | Mykhailo Podaniev | M | — | todo |
