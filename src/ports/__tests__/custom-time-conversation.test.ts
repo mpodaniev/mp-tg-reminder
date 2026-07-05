@@ -200,6 +200,34 @@ describe("Router: custom-time conversation flow (AC-03/AC-08)", () => {
     expect(await pendingPromptRepo.findPendingPrompt()).toBeNull();
   });
 
+  it("custom time sooner than the wake interval warns delivery may be late (AC-03)", async () => {
+    const r = Reminder.reconstitute({ id: 12, snapshot: makeSnapshot(12), state: "awaiting_time" });
+    repo.reminders.set(12, r);
+
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 12, createdAt: Date.now() });
+
+    const ctx = makeTextCtx("за 1 хв");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).toHaveBeenCalled();
+    const confirmMsg: string = (ctx.reply as any).mock.calls[0][0];
+    expect(confirmMsg).toMatch(/інтервал/i);
+  });
+
+  it("custom time with headroom over the wake interval carries no delay warning (AC-03)", async () => {
+    const r = Reminder.reconstitute({ id: 13, snapshot: makeSnapshot(13), state: "awaiting_time" });
+    repo.reminders.set(13, r);
+
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 13, createdAt: Date.now() });
+
+    const ctx = makeTextCtx("за 10 год");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).toHaveBeenCalled();
+    const confirmMsg: string = (ctx.reply as any).mock.calls[0][0];
+    expect(confirmMsg).not.toMatch(/інтервал/i);
+  });
+
   it("past custom time is rejected and prompt stays open (AC-08)", async () => {
     const r = Reminder.reconstitute({ id: 7, snapshot: makeSnapshot(7), state: "awaiting_time" });
     repo.reminders.set(7, r);

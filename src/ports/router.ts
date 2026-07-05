@@ -22,6 +22,12 @@ import type { PendingPromptRepository, PendingPromptRow } from "../app/ports/pen
 // no-op pattern so a stale tap never escapes to bot.catch.
 const NOT_ACTIVE_MESSAGE = "⚠️ Це нагадування більше не активне.";
 
+// AC-03: appended when the chosen time falls sooner than the configured wake
+// interval — an estimate for the ordinary case, not a guarantee (AC-07 covers
+// a missed wake cycle delaying it further, but never losing it).
+const DELIVERY_MAY_BE_LATE_NOTE =
+  "\n⏳ Під час звичайної роботи доставка може запізнитися до одного інтервалу пробудження.";
+
 export function buildRouter(
   repo: ReminderRepository,
   gateway: TelegramGateway,
@@ -139,8 +145,9 @@ async function handleQuickPick(
     return;
   }
 
+  let deliveryMayBeLate: boolean;
   try {
-    await scheduleUC.execute({ reminderId, scheduledAtMs: scheduledAt });
+    ({ deliveryMayBeLate } = await scheduleUC.execute({ reminderId, scheduledAtMs: scheduledAt }));
   } catch (err) {
     if (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError) {
       await ctx.answerCallbackQuery?.();
@@ -160,7 +167,9 @@ async function handleQuickPick(
   }).format(new Date(scheduledAt));
 
   await ctx.answerCallbackQuery?.("✅ Нагадування заплановано");
-  await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+  await ctx.reply?.(
+    `✅ Нагадування заплановано на ${formatted}${deliveryMayBeLate ? DELIVERY_MAY_BE_LATE_NOTE : ""}`
+  );
 }
 
 async function handleCustomTimeInput(
@@ -203,8 +212,13 @@ async function handleCustomTimeInput(
 
   if (pending.type === "capture") {
     try {
-      await scheduleUC.execute({ reminderId: pending.reminderId, scheduledAtMs: scheduledAt });
-      await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+      const { deliveryMayBeLate } = await scheduleUC.execute({
+        reminderId: pending.reminderId,
+        scheduledAtMs: scheduledAt,
+      });
+      await ctx.reply?.(
+        `✅ Нагадування заплановано на ${formatted}${deliveryMayBeLate ? DELIVERY_MAY_BE_LATE_NOTE : ""}`
+      );
     } catch (err) {
       if (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError) {
         await ctx.reply?.(NOT_ACTIVE_MESSAGE);

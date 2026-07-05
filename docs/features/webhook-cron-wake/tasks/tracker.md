@@ -13,7 +13,7 @@
 | T6 | Characterize today's router dispatch/auth behavior | tests | Mykhailo Podaniev | M | — | done |
 | T7 | Centralize Owner-auth gate at router dispatch | ports | Mykhailo Podaniev | M | T6 | done |
 | T8 | Durable pending-prompt in router (replace in-memory map) | ports | Mykhailo Podaniev | M | T3, T7 | done |
-| T9 | Wake-interval delay estimate on confirmation | app | Mykhailo Podaniev | S | — | todo |
+| T9 | Wake-interval delay estimate on confirmation | app | Mykhailo Podaniev | S | — | done |
 | T10 | `node:http` server skeleton + route dispatch | ports | Mykhailo Podaniev | M | — | todo |
 | T11 | Webhook handler (secretToken verification) | ports | Mykhailo Podaniev | M | T7, T10 | todo |
 | T12 | Wake handler (constant-time bearer verification) | ports | Mykhailo Podaniev | M | T4, T10 | todo |
