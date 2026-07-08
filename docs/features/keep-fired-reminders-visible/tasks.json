@@ -1,0 +1,110 @@
+{
+  "slug": "keep-fired-reminders-visible",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Widen repository query scope to pending+fired, ordered by capture order",
+      "layer": "infra",
+      "deps": [],
+      "acs": ["AC-01", "AC-08"],
+      "dod": "the repository read returns pending and fired reminders ordered by id ASC, verified by an integration test against a real SQLite instance",
+      "files_hint": [
+        "src/app/ports/reminder-repository.ts",
+        "src/infra/db/sqlite-reminder-repository.ts",
+        "src/infra/__tests__/sqlite-reminder-repository.test.ts"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "List use-case: per-row status flag + capture-order truncation",
+      "layer": "app",
+      "deps": ["T1"],
+      "acs": ["AC-01", "AC-02", "AC-03", "AC-08"],
+      "dod": "the view model marks each row scheduled or fired, keeps capture-order position across transitions, and truncates by earliest-added with an overflow indicator, verified by unit tests",
+      "files_hint": [
+        "src/app/use-cases/list-active-reminders.ts",
+        "src/app/use-cases/__tests__/list-active-reminders.test.ts"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "List handler: render scheduled/fired flag and suppress Cancel on fired rows",
+      "layer": "ports",
+      "deps": ["T2"],
+      "acs": ["AC-02", "AC-05", "AC-07"],
+      "dod": "the rendered list message shows a scheduled/fired flag per row and omits the Cancel action on fired rows, verified by a unit test over the rendered action set",
+      "files_hint": [
+        "src/ports/handlers/list-handler.ts",
+        "src/ports/__tests__/list-handler.test.ts"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Telegram gateway: drop the Done button from the fired-reminder keyboard",
+      "layer": "infra",
+      "deps": [],
+      "acs": ["AC-06"],
+      "dod": "newly sent fired-reminder messages carry only Snooze and Delete buttons, verified by a unit test on the keyboard builder",
+      "files_hint": [
+        "src/infra/telegram/grammy-telegram-gateway.ts"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Resolve-reminder use-case: guard the done action before any domain call",
+      "layer": "app",
+      "deps": [],
+      "acs": ["AC-06"],
+      "dod": "action === 'done' is intercepted and returns a not-active outcome without invoking Reminder.resolveDone, verified by a unit test that asserts the domain transition is never called for a still-fired reminder",
+      "files_hint": [
+        "src/app/use-cases/resolve-reminder.ts",
+        "src/app/use-cases/__tests__/resolve-reminder.test.ts"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Resolve handler: map the guarded done outcome to the uniform 'no longer active' reply",
+      "layer": "ports",
+      "deps": ["T5", "T4"],
+      "acs": ["AC-06"],
+      "dod": "a stale done callback on a fired-and-undeleted reminder replies with the existing uniform not-active message, does not crash, and leaves persisted state unchanged, verified by an integration test",
+      "files_hint": [
+        "src/ports/handlers/resolve-handler.ts",
+        "src/ports/__tests__/resolve-handler.test.ts"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Integration test: list position is stable across fire, deliver, and snooze; only delete removes",
+      "layer": "tests",
+      "deps": ["T2"],
+      "acs": ["AC-03", "AC-04"],
+      "dod": "an integration test seeds a reminder, drives fire/deliver/snooze and asserts unchanged list position and continued visibility, then deletes it and asserts it is gone",
+      "files_hint": [
+        "src/app/use-cases/__tests__/list-active-reminders.test.ts"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Integration test: oversized visible set sends exactly one message with overflow indicator",
+      "layer": "tests",
+      "deps": ["T3"],
+      "acs": ["AC-08"],
+      "dod": "an integration test seeds more visible reminders than the per-window message limit and asserts exactly one bot message is sent, containing the earliest-added rows plus an overflow indicator",
+      "files_hint": [
+        "src/ports/__tests__/list-handler.test.ts"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Extend the owner-gate test: non-Owner sees no reminders when fired reminders exist",
+      "layer": "tests",
+      "deps": ["T3"],
+      "acs": ["AC-07"],
+      "dod": "the existing owner-gate unit test is extended with a fired reminder in the fixture set and asserts the list command still reveals nothing to a non-Owner",
+      "files_hint": [
+        "src/ports/__tests__/router-auth.test.ts"
+      ]
+    }
+  ]
+}
