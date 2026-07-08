@@ -90,9 +90,15 @@ C4Context
 
 ## 4. Solution strategy
 
-<!-- pending Socratic walk -->
+**Target surface:** `backend-service` — the existing single bot process. This feature adds no new deployable unit and no UI surface in the C4 sense. Surface selection is inherited from `telegram-reminder` / `list-active-reminders`, so it does not cross the blast-radius gate; recorded in frontmatter `target_surfaces`.
 
-## 5. Building block view
+**Top strategic choices (the seeds for ADRs):**
+
+1. **Widen the list query scope** — one repository query, `state IN ('pending', 'fired')` instead of `state = 'pending'`; the view model gains a per-row status field (`scheduled` / `fired`). Single vertical slice (infra + app), reversible, no legitimate competing approach worth an ADR — folded into §5.
+2. **Retire the Done action, with a graceful stale-callback path** — removes the `✅ Done` button from the fired-reminder keyboard; the resolve path catches a stale `done` callback and replies with the existing uniform "no longer active" message instead of crashing or resolving. Touches `infra` (gateway keyboard), `ports` (resolve handler), and leaves a dormant `domain` state/transition. → **ADR-0001**.
+3. **Use the monotonic reminder `id` as the sole ordering + truncation key** — capture-order position, superseding the fire-time ordering `list-active-reminders` used; no schema change since `id` already satisfies "assigned once at capture, never recomputed." → **ADR-0002**.
+
+No schema change and no new migration are implied by this feature (ADR-0002); `data-model` is expected to be a thin reconciliation pass, not new tables/columns.
 
 <!-- pending Socratic walk -->
 
