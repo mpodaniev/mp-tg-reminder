@@ -22,6 +22,9 @@ the keyboard in `infra/telegram/grammy-telegram-gateway.ts`, the callback handli
 transition left dormant in `domain/state-machine.ts` — and every fired-reminder message already
 sent before rollout still carries a live `done:<id>` callback button that Telegram will happily
 deliver. AC-06 requires that a stale tap neither crash the bot nor mark the reminder resolved.
+Critically, `fired → done` is a *valid* transition in `state-machine.ts` — a still-`fired`-and-
+undeleted reminder (exactly the reminders this feature keeps visible) would resolve successfully
+if the callback reached the domain unguarded, which would violate AC-06 outright.
 
 ## Decision drivers
 
@@ -35,17 +38,26 @@ deliver. AC-06 requires that a stale tap neither crash the bot nor mark the remi
 
 ## Considered options
 
-1. **Remove the button, catch `InvalidStateTransitionError` in the resolve path, reply with the
-   existing uniform "no longer active" message** — no domain change beyond leaving `done` dormant.
-2. **Repurpose the Done button to behave like Delete** (silently alias it) — keeps a two-button
+1. **Remove the button; guard `action === "done"` in the resolve handler *before* calling the
+   domain, always replying with the existing uniform "no longer active" message** — the domain's
+   `resolve_done` transition is never invoked, so its validity is irrelevant; no domain change
+   beyond leaving `done` permanently unreachable.
+2. **Remove the button, but only catch `InvalidStateTransitionError` from the domain call** —
+   rejected: `fired → done` is a valid transition, so this would only catch the case where the
+   reminder is *already* `done`/`deleted`/etc., and would silently resolve (not reject) a tap on a
+   still-`fired`-and-undeleted reminder — the exact case AC-06 targets. Does not satisfy AC-06.
+3. **Repurpose the Done button to behave like Delete** (silently alias it) — keeps a two-button
    layout but makes the surviving button lie about what it does.
-3. **Remove the domain `done` state and transition entirely**, rejected by spec §8 as unnecessary
-   surgery for an implementation-only concern with no Owner-observable effect.
+
+<!-- Not considered as a numbered option: removing the domain `done` state and transition entirely —
+     foreclosed by spec §8, which already resolved this as "leave it unreachable, no removal." -->
 
 ## Decision outcome
 
-**Chosen:** Option 1. It satisfies AC-06 directly, reuses the error-handling convention already
-proven for stale `cancel` taps, and keeps the change local to the callback path — no schema or
+**Chosen:** Option 1 — a handler-level guard, not a caught domain error. It satisfies AC-06
+directly (the guard fires regardless of the reminder's actual state), reuses the error-handling
+convention's *reply shape* (the uniform "no longer active" message) without depending on the
+domain's transition validity, and keeps the change local to the callback path — no schema or
 domain-shape change, no button that lies about its behavior.
 
 ## Consequences

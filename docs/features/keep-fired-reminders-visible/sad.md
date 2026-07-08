@@ -4,7 +4,7 @@ owner: "Mykhailo Podaniev"
 reviewers: ["Tech Lead", "Security Lead"]
 updated_at: "2026-07-08"
 feature_size: "S"
-target_surfaces: []  # filled in §4 — subset of: backend-service | web-frontend | mobile-app | desktop-app | cli | worker | library-sdk. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
+target_surfaces: [backend-service]  # filled in §4 — subset of: backend-service | web-frontend | mobile-app | desktop-app | cli | worker | library-sdk. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
 ---
 
 # Software Architecture Document — keep-fired-reminders-visible
@@ -37,7 +37,7 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
 
 **Technical.**
 - TypeScript 5.4 (ES2022, NodeNext), Node.js `>=22`.
-- `grammy` 1.21 + `@grammyjs/conversations` 1.2 (Telegram); `better-sqlite3` 9.4 (synchronous SQLite), store `reminders.db`.
+- `grammy` 1.21 + `@grammyjs/conversations` 1.2 (Telegram); `better-sqlite3` 9.4 (synchronous SQLite), store `./data/reminders.db`.
 - Hexagonal ports-and-adapters layering — inherited from `telegram-reminder` ADR-0006 (`domain` ← `app`/`ports` ← `infra`).
 - Telegram Bot API limits: `callback_data` ≤ 64 bytes, message text ≤ 4096 chars, 48h message-delete window.
 
@@ -95,7 +95,7 @@ C4Context
 **Top strategic choices (the seeds for ADRs):**
 
 1. **Widen the list query scope** — one repository query, `state IN ('pending', 'fired')` instead of `state = 'pending'`; the view model gains a per-row status field (`scheduled` / `fired`). Single vertical slice (infra + app), reversible, no legitimate competing approach worth an ADR — folded into §5.
-2. **Retire the Done action, with a graceful stale-callback path** — removes the `✅ Done` button from the fired-reminder keyboard; the resolve path catches a stale `done` callback and replies with the existing uniform "no longer active" message instead of crashing or resolving. Touches `infra` (gateway keyboard), `ports` (resolve handler), and leaves a dormant `domain` state/transition. → **ADR-0001**.
+2. **Retire the Done action, with a graceful stale-callback path** — removes the `✅ Done` button from the fired-reminder keyboard; the resolve handler intercepts any `done` action **before** invoking the domain transition (a handler-level guard, not a catch on the domain's response) and always replies with the existing uniform "no longer active" message. This is necessary because `fired → done` is a *valid* domain transition (`state-machine.ts`) — a still-`fired`-and-undeleted reminder would otherwise resolve successfully instead of being rejected, violating AC-06. Touches `infra` (gateway keyboard) and `ports` (resolve handler guard); leaves a dormant, now fully unreachable `domain` state/transition. → **ADR-0001**.
 3. **Use the monotonic reminder `id` as the sole ordering + truncation key** — capture-order position, superseding the fire-time ordering `list-active-reminders` used; no schema change since `id` already satisfies "assigned once at capture, never recomputed." → **ADR-0002**.
 
 No schema change and no new migration are implied by this feature (ADR-0002); `data-model` is expected to be a thin reconciliation pass, not new tables/columns.
@@ -113,7 +113,7 @@ src/
 ├── app/
 │   ├── use-cases/
 │   │   ├── list-active-reminders.ts     CHANGED — query scope pending+fired; row gains status field; truncation key → capture-order (ADR-0002)
-│   │   └── resolve-reminder.ts          CHANGED — catches InvalidStateTransitionError on a stale `done` action → uniform not-active outcome (ADR-0001)
+│   │   └── resolve-reminder.ts          CHANGED — guards `action === "done"` before calling the domain transition (never invokes `resolve_done`) → uniform not-active outcome, regardless of the reminder's actual state (ADR-0001)
 │   └── ports/
 │       └── reminder-repository.ts       + method signature covers pending+fired scope, ordered by id ASC
 ├── infra/
@@ -144,7 +144,7 @@ C4Container
     Rel(owner, tg, "Sends /list, taps Snooze/Delete/Source")
     Rel(tg, ports, "Updates (message, callback_query)", "long-polling")
     Rel(ports, app, "Invokes use-cases")
-    Rel(app, domain, "Applies transitions; rejects stale done")
+    Rel(app, domain, "Applies transitions (done never invoked — guarded in ports)")
     Rel(app, infra, "Via ReminderRepository port")
     Rel(infra, db, "Reads pending+fired / writes on resolve", "better-sqlite3")
     Rel(ports, tg, "Sends widened list + action replies", "HTTPS")
@@ -184,17 +184,12 @@ sequenceDiagram
     Owner->>Ports: taps stale Done on an old fired-reminder message
     Ports->>Ports: owner gate check
     Ports->>App: resolve reminder (action=done, id)
-    App->>Domain: attempt fired to done transition
-    alt reminder no longer in a done-eligible state
-        Domain-->>App: transition rejected (InvalidStateTransitionError)
-        App-->>Ports: not active
-        Ports-->>Owner: uniform "no longer active" reply — no crash, no state change
-    else reminder still eligible (defensive branch; the Done button is no longer rendered post-rollout)
-        Domain-->>App: done
-        App-->>Ports: resolved
-        Ports-->>Owner: N/A — dead path, Done button no longer rendered
-    end
+    Note over App,Domain: guard: action "done" is always intercepted here — the domain's fired→done transition is never invoked, regardless of the reminder's actual state
+    App-->>Ports: not active (uniform outcome for the retired action)
+    Ports-->>Owner: uniform "no longer active" reply — no crash, no state change
 ```
+
+The guard sits in `app`, ahead of any call into `Domain` — this is deliberate: `fired → done` is a *valid* transition in the state machine, so a still-`fired`-and-undeleted reminder would otherwise resolve successfully instead of being rejected, which would violate AC-06.
 
 > **Flagged for `sequences`:** these two cover the critical happy path (AC-01/AC-02) and the graceful-degradation path (AC-06). Remaining flows (AC-03 position stability across transitions, AC-04 delete-only invariant, AC-05 no-cancel-on-fired, AC-07 non-Owner rejection, AC-08 overflow truncation) are the next stage's job.
 
@@ -209,7 +204,7 @@ No deployment change: the feature adds code to the existing bot process and read
 | Concept | Convention | Where defined |
 |---|---|---|
 | Authorization | Owner gate on `/list` and every fired-message callback (`OWNER_TELEGRAM_ID`) — reuse, no new boundary | `src/main.ts` auth gate (map §Constraints) |
-| Error handling | Stale-transition errors (`InvalidStateTransitionError` / `ReminderNotFoundError`) map to one uniform "no longer active" reply — extended from cancel (list-active-reminders) to the resolve/Done path (ADR-0001) | `src/domain/errors.ts` pattern; `list-handler.ts:114-126` |
+| Error handling | Stale-transition errors (`InvalidStateTransitionError` / `ReminderNotFoundError`) map to one uniform "no longer active" reply — extended from cancel (list-active-reminders) to the resolve path; the `done` action specifically is intercepted by a handler-level guard *before* any domain call (never a caught error), since `fired → done` is itself a valid transition (ADR-0001) | `src/domain/errors.ts` pattern; `list-handler.ts:114-126` |
 | Ordering / position | Capture-order via monotonic `id ASC`, fixed at insert, never recomputed — supersedes fire-time ordering | ADR-0002 |
 | Callback encoding | Action tag + `reminder_id` in `callback_data` (≤ 64 bytes) — reuse; `done` tag no longer emitted but still accepted defensively for legacy messages | `grammy-telegram-gateway.ts` |
 | Status rendering | Each list row carries an explicit scheduled/fired flag, no extra timestamp beyond the existing bounded preview (spec §8 default) | `list-handler.ts` view rendering |
@@ -254,7 +249,7 @@ ADR files live under `docs/features/keep-fired-reminders-visible/adr/NNNN-<title
 
 | Risk / debt | Severity | Mitigation | Owner |
 |---|---|---|---|
-| Old fired-reminder messages (sent before rollout) keep a live `done:<id>` callback button indefinitely — Telegram gives no way to retroactively edit keyboards past the 48h window | Low | AC-06 uniform "no longer active" reply on any stale `done` tap; no crash, no state change | Mykhailo Podaniev |
+| Old fired-reminder messages (sent before rollout) keep a live `done:<id>` callback button indefinitely — Telegram gives no way to retroactively edit keyboards past the 48h window | Low | AC-06 uniform "no longer active" reply on any `done` tap, via a handler-level guard that never invokes the domain's (valid) `fired → done` transition — no crash, no state change regardless of the reminder's actual state | Mykhailo Podaniev |
 | Fired-but-undeleted reminders accumulate with no cap beyond the existing truncation (spec §3 Non-goal: no archiving) | Low | Existing overflow indicator surfaces the hidden count; archiving is a deliberate Non-goal, revisit only if it becomes a real complaint | Mykhailo Podaniev |
 | List position tied to the DB's autoincrement `id` (ADR-0002) rather than a domain-owned field | Low | Acceptable while the bot never bulk-imports or renumbers ids; would need a real `position` column only if that insert pattern changes | Mykhailo Podaniev |
 | Dormant `done` domain state/transition (ADR-0001) is dead code that a future change could accidentally re-wire to a live callback | Low | AC-06 test coverage pins the graceful-rejection behavior; any future re-wiring would need to deliberately break that test | Mykhailo Podaniev |
@@ -269,5 +264,5 @@ ADR files live under `docs/features/keep-fired-reminders-visible/adr/NNNN-<title
 |---|---|
 | Visible reminder | A Reminder in `pending`, `firing`, or `fired` state that has not yet been explicitly deleted — the set the widened list shows (canonical: [CONTEXT.md](./CONTEXT.md)). |
 | Capture order | List/truncation ordering key = the reminder's monotonic `id`, assigned once at capture and never recomputed (ADR-0002); supersedes fire-time ordering. |
-| Stale Done tap | A tap on the `✅ Done` callback from a fired-reminder message sent before this feature's rollout — handled as a graceful no-op, never a crash or silent resolution (ADR-0001, AC-06). |
-| Dormant `done` state | The domain's `fired → done` transition, left defined in `state-machine.ts` but unreachable from any UI path after Done's retirement (ADR-0001). |
+| Stale Done tap | A tap on the `✅ Done` callback from a fired-reminder message sent before this feature's rollout — intercepted by a handler-level guard and handled as a graceful no-op, never a crash or silent resolution (ADR-0001, AC-06). |
+| Dormant `done` state | The domain's `fired → done` transition — still a *valid* transition in `state-machine.ts`, but made unreachable from any UI path by the `ports`-level guard on the `done` action, not by any domain-level restriction (ADR-0001). |
