@@ -152,7 +152,51 @@ C4Container
 
 ## 6. Runtime view
 
-<!-- pending Socratic walk -->
+**Critical flow 1: render the widened list**
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    participant Infra
+    participant DB
+    Owner->>Ports: sends list command
+    Ports->>Ports: owner gate check
+    Ports->>App: list active reminders
+    App->>Infra: find pending + fired, ordered by id ASC
+    Infra->>DB: read pending+fired (state IN (...))
+    DB-->>Infra: rows
+    Infra-->>App: reminders
+    App->>App: build view model (status flag per row; truncate by capture order + overflow)
+    App-->>Ports: list view model
+    Ports-->>Owner: single message — scheduled/fired flag per row, stable capture-order position
+```
+
+**Critical flow 2: stale Done tap on an old fired-reminder message (AC-06)**
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    participant Domain
+    Owner->>Ports: taps stale Done on an old fired-reminder message
+    Ports->>Ports: owner gate check
+    Ports->>App: resolve reminder (action=done, id)
+    App->>Domain: attempt fired to done transition
+    alt reminder no longer in a done-eligible state
+        Domain-->>App: transition rejected (InvalidStateTransitionError)
+        App-->>Ports: not active
+        Ports-->>Owner: uniform "no longer active" reply — no crash, no state change
+    else reminder still eligible (defensive branch; the Done button is no longer rendered post-rollout)
+        Domain-->>App: done
+        App-->>Ports: resolved
+        Ports-->>Owner: N/A — dead path, Done button no longer rendered
+    end
+```
+
+> **Flagged for `sequences`:** these two cover the critical happy path (AC-01/AC-02) and the graceful-degradation path (AC-06). Remaining flows (AC-03 position stability across transitions, AC-04 delete-only invariant, AC-05 no-cancel-on-fired, AC-07 non-Owner rejection, AC-08 overflow truncation) are the next stage's job.
 
 ## 7. Deployment view
 
