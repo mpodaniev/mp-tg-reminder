@@ -15,7 +15,23 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
 
 ## 1. Introduction and goals
 
-<!-- pending Socratic walk -->
+**Intent.** The Owner of the reminders bot must be able to trust the list as a complete, accurate picture of everything still unresolved — both scheduled and already-fired reminders — clearly distinguishing the two, holding each entry at a stable position, and offering exactly one way to remove an entry: Delete.
+
+**Top-3 quality goals (1-liners; full scenarios in §10):**
+
+1. **Accuracy** — the list reflects every reminder not yet explicitly deleted (scheduled or fired), ordered by capture time
+2. **Owner-only** — no `/list` command response leaks any reminder data to a non-Owner
+3. **Latency** — p95 list response ≤ 1000 ms from command receipt to message sent (unchanged from `list-active-reminders`)
+
+**Stakeholders.**
+
+| Role | Interest | Sign-off owner? |
+|---|---|---|
+| Owner | Uses `/list`, relies on it as the complete picture of everything still outstanding | No |
+| Tech Lead | SAD approval | Yes |
+| Security Lead | Reviews the absence of a new authorization boundary (spec §6.1) | No |
+
+<!-- Decision overrides (¶4) — populated by the critic resolution loop, empty otherwise. -->
 
 ## 2. Constraints
 
