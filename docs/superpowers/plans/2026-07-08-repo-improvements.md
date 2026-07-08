@@ -28,7 +28,7 @@
 | 1 | ✅ Зроблено | Немає ліміту розміру тіла HTTP-запиту; тіло буферизується до auth → OOM/DoS на публічному URL | `src/ports/http/server.ts:38` | Task 1 |
 | 2 | ✅ Зроблено | `sh -c` як PID 1 не пересилає SIGTERM → graceful shutdown ніколи не виконується | `Dockerfile:18`, `src/main.ts:116` | Task 2 |
 | 3 | ✅ Зроблено | `@grammyjs/conversations` не використовується ніде в коді | `package.json:19` | Task 3 |
-| 4 | 🟠 Важливе | `better-sqlite3` 9.6 → 12.x (prebuilt для Node 22; прибрати python3/make/g++ зі збірки) | `package.json`, `Dockerfile:2` | Task 4 |
+| 4 | ✅ Зроблено | `better-sqlite3` 9.6 → 12.x (prebuilt для Node 22; прибрати python3/make/g++ зі збірки) | `package.json`, `Dockerfile:2` | Task 4 |
 | 5 | 🟠 Важливе | Runtime-образ містить devDependencies (typescript, vitest) | `Dockerfile:12` | Task 5 |
 | 6 | 🟠 Важливе | `vitest` 1.6 → 4.x (1.x без security-фіксів) | `package.json` | Task 6 |
 | 7 | 🟠 Важливе | Немає перевіреної стратегії бекапів SQLite-волюма | `fly.toml:10` | Task 7 |
