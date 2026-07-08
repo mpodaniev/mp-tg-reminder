@@ -200,24 +200,74 @@ sequenceDiagram
 
 ## 7. Deployment view
 
-<!-- pending Socratic walk -->
+<!-- N/A: reuses the existing single bot process / deployment unit — no new container, replica, or infra change. -->
+
+No deployment change: the feature adds code to the existing bot process and reads/writes the existing `reminders.db`. Monitoring reuses the established structured timing log (for the p95 leaf in §10) and the global `bot.catch` handler (the KPI target of 0 unhandled stale-Done-tap errors over any 30-day window, spec §7).
 
 ## 8. Crosscutting concepts
 
-<!-- pending Socratic walk -->
+| Concept | Convention | Where defined |
+|---|---|---|
+| Authorization | Owner gate on `/list` and every fired-message callback (`OWNER_TELEGRAM_ID`) — reuse, no new boundary | `src/main.ts` auth gate (map §Constraints) |
+| Error handling | Stale-transition errors (`InvalidStateTransitionError` / `ReminderNotFoundError`) map to one uniform "no longer active" reply — extended from cancel (list-active-reminders) to the resolve/Done path (ADR-0001) | `src/domain/errors.ts` pattern; `list-handler.ts:114-126` |
+| Ordering / position | Capture-order via monotonic `id ASC`, fixed at insert, never recomputed — supersedes fire-time ordering | ADR-0002 |
+| Callback encoding | Action tag + `reminder_id` in `callback_data` (≤ 64 bytes) — reuse; `done` tag no longer emitted but still accepted defensively for legacy messages | `grammy-telegram-gateway.ts` |
+| Status rendering | Each list row carries an explicit scheduled/fired flag, no extra timestamp beyond the existing bounded preview (spec §8 default) | `list-handler.ts` view rendering |
+| Source link availability | Deep link if public username, else inline captured content — reuse, unchanged | existing fired-reminder source flow |
+| Timezone rendering | Fire time in Owner's home timezone — reuse tz utils, unchanged | `ports` tz utils |
+| Bounded output / anti-flood | Exactly 1 message per `/list`; truncation now keyed to capture order, still `min(max-count, 4096 chars)`; contributes ≤ 1 to the 10-msgs/60s budget | list-active-reminders ADR-0003 (truncation mechanism), ADR-0002 (key) |
+| Internationalisation | Ukrainian message text, single language | existing convention |
+| Observability | Structured timing log around the list use-case (p95 leaf); `bot.catch` for unhandled errors, including stale Done taps | existing |
 
 ## 9. Architecture decisions
 
-<!-- pending Socratic walk -->
+| # | Title | Status | Section |
+|---|---|---|---|
+| 0001 | Retire the Done action with graceful stale-callback handling | Accepted | §4 |
+| 0002 | Use the monotonic reminder id as the sole list ordering and truncation key | Accepted | §4 |
+
+ADR files live under `docs/features/keep-fired-reminders-visible/adr/NNNN-<title>.md`.
 
 ## 10. Quality requirements
 
-<!-- pending Socratic walk -->
+**QG-1. Accuracy**
+- **When:** the list is requested under a fixed clock.
+- **Then:** the list reflects every reminder not yet explicitly deleted (scheduled or fired) at query time, ordered by capture time ascending.
+- **How verify:** integration test with a fixed clock (spec §6 — Accuracy row).
+
+**QG-2. Owner-only**
+- **When:** a Telegram user who is not the Owner sends the list command.
+- **Then:** every list command is rejected for any non-Owner (scheduled or fired reminders alike).
+- **How verify:** unit test on the auth gate (spec §6 — Owner-only row).
+
+**QG-3. Latency**
+- **When:** the Owner sends the list command.
+- **Then:** p95 ≤ 1000 ms from command receipt to message sent.
+- **How verify:** timing log around the list use-case (spec §6 — Latency p95 row; unchanged from `list-active-reminders`).
+
+**QG-4. Bounded output / anti-flood**
+- **When:** the Owner's visible set (scheduled + fired-undeleted) exceeds the per-window message limit.
+- **Then:** exactly 1 bot message regardless of reminder count; the list still contributes at most 1 to the existing ≤ 10 bot messages / 60 s window.
+- **How verify:** integration test asserting send-count = 1 (spec §6 — Messages-per-response + Anti-flood rows).
 
 ## 11. Risks and technical debt
 
-<!-- pending Socratic walk -->
+| Risk / debt | Severity | Mitigation | Owner |
+|---|---|---|---|
+| Old fired-reminder messages (sent before rollout) keep a live `done:<id>` callback button indefinitely — Telegram gives no way to retroactively edit keyboards past the 48h window | Low | AC-06 uniform "no longer active" reply on any stale `done` tap; no crash, no state change | Mykhailo Podaniev |
+| Fired-but-undeleted reminders accumulate with no cap beyond the existing truncation (spec §3 Non-goal: no archiving) | Low | Existing overflow indicator surfaces the hidden count; archiving is a deliberate Non-goal, revisit only if it becomes a real complaint | Mykhailo Podaniev |
+| List position tied to the DB's autoincrement `id` (ADR-0002) rather than a domain-owned field | Low | Acceptable while the bot never bulk-imports or renumbers ids; would need a real `position` column only if that insert pattern changes | Mykhailo Podaniev |
+| Dormant `done` domain state/transition (ADR-0001) is dead code that a future change could accidentally re-wire to a live callback | Low | AC-06 test coverage pins the graceful-rejection behavior; any future re-wiring would need to deliberately break that test | Mykhailo Podaniev |
+
+**Accepted debt (acceptable in v1, plan to fix later):**
+- No archiving/capping of fired-undeleted reminders beyond existing truncation (spec §3 Non-goal).
+- The domain `done` state and `fired → done` transition remain in the codebase, permanently unreachable from any UI path (spec §8 default — not removed).
 
 ## 12. Glossary
 
-<!-- pending Socratic walk -->
+| Term | Meaning |
+|---|---|
+| Visible reminder | A Reminder in `pending`, `firing`, or `fired` state that has not yet been explicitly deleted — the set the widened list shows (canonical: [CONTEXT.md](./CONTEXT.md)). |
+| Capture order | List/truncation ordering key = the reminder's monotonic `id`, assigned once at capture and never recomputed (ADR-0002); supersedes fire-time ordering. |
+| Stale Done tap | A tap on the `✅ Done` callback from a fired-reminder message sent before this feature's rollout — handled as a graceful no-op, never a crash or silent resolution (ADR-0001, AC-06). |
+| Dormant `done` state | The domain's `fired → done` transition, left defined in `state-machine.ts` but unreachable from any UI path after Done's retirement (ADR-0001). |
