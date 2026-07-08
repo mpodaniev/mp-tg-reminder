@@ -35,7 +35,30 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
 
 ## 2. Constraints
 
-<!-- pending Socratic walk -->
+**Technical.**
+- TypeScript 5.4 (ES2022, NodeNext), Node.js `>=22`.
+- `grammy` 1.21 + `@grammyjs/conversations` 1.2 (Telegram); `better-sqlite3` 9.4 (synchronous SQLite), store `reminders.db`.
+- Hexagonal ports-and-adapters layering — inherited from `telegram-reminder` ADR-0006 (`domain` ← `app`/`ports` ← `infra`).
+- Telegram Bot API limits: `callback_data` ≤ 64 bytes, message text ≤ 4096 chars, 48h message-delete window.
+
+**Organisational.**
+- Effort budget: size S (a small handful of PRs).
+- No hard external deadline.
+- Solo maintainer (Mykhailo Podaniev).
+
+**Conventions.**
+- `docs/architecture-map.md` is the cited convention reference (no separate convention file exists).
+- Manual constructor DI in the composition root `src/main.ts`; domain custom error classes (`src/domain/errors.ts`); Vitest co-located `__tests__/*.test.ts`; Flyway-style `NN_*.{up,down}.sql` migrations.
+
+**Regulatory / external.**
+- Single-Owner bot; data is confidential (the Owner's forwarded personal messages). No new PII or fields are introduced (spec §6.1).
+- No new authorization boundary — this feature widens what the already owner-gated `/list` view shows; it does not add a capability. Removing Done *narrows* the fired-reminder message's capabilities.
+
+**Inherited decision overrides (spec §1 ¶4 — documented here as given constraints, not re-litigated):**
+- the list now includes `fired`-but-undeleted reminders (reopens the `list-active-reminders` pending-only scope)
+- list order is capture-time based, not fire-time based
+- truncation keeps "earliest-added that fit", not "soonest-firing that fit"
+- the Done action is retired entirely; Delete is the sole resolving action
 
 ## 3. Context and scope
 
