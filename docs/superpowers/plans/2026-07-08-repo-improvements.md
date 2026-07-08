@@ -26,8 +26,8 @@
 | # | Пріоритет | Знахідка | Де | Задача |
 |---|-----------|----------|----|--------|
 | 1 | ✅ Зроблено | Немає ліміту розміру тіла HTTP-запиту; тіло буферизується до auth → OOM/DoS на публічному URL | `src/ports/http/server.ts:38` | Task 1 |
-| 2 | 🔴 Термінове | `sh -c` як PID 1 не пересилає SIGTERM → graceful shutdown ніколи не виконується | `Dockerfile:18`, `src/main.ts:116` | Task 2 |
-| 3 | 🔴 Швидка перемога | `@grammyjs/conversations` не використовується ніде в коді | `package.json:19` | Task 3 |
+| 2 | ✅ Зроблено | `sh -c` як PID 1 не пересилає SIGTERM → graceful shutdown ніколи не виконується | `Dockerfile:18`, `src/main.ts:116` | Task 2 |
+| 3 | ✅ Зроблено | `@grammyjs/conversations` не використовується ніде в коді | `package.json:19` | Task 3 |
 | 4 | 🟠 Важливе | `better-sqlite3` 9.6 → 12.x (prebuilt для Node 22; прибрати python3/make/g++ зі збірки) | `package.json`, `Dockerfile:2` | Task 4 |
 | 5 | 🟠 Важливе | Runtime-образ містить devDependencies (typescript, vitest) | `Dockerfile:12` | Task 5 |
 | 6 | 🟠 Важливе | `vitest` 1.6 → 4.x (1.x без security-фіксів) | `package.json` | Task 6 |
@@ -177,7 +177,7 @@ git commit -m "fix(http): cap request body at 1 MiB before auth to close DoS vec
 
 ---
 
-### Task 2: Graceful shutdown у Docker (exec + видимий лог)
+### Task 2: Graceful shutdown у Docker (exec + видимий лог) ✅ Виконано (коміт `ad77ea2`)
 
 **Files:**
 - Modify: `Dockerfile`
@@ -189,7 +189,7 @@ git commit -m "fix(http): cap request body at 1 MiB before auth to close DoS vec
 
 Тестів немає (інфраструктурна зміна поза межами vitest); верифікація — кроки 3–4.
 
-- [ ] **Step 1: Fix the Dockerfile CMD**
+- [x] **Step 1: Fix the Dockerfile CMD**
 
 Замінити останній рядок `Dockerfile`:
 
@@ -200,7 +200,7 @@ git commit -m "fix(http): cap request body at 1 MiB before auth to close DoS vec
 CMD ["sh", "-c", "node dist/infra/db/migrate.js up && exec node dist/main.js"]
 ```
 
-- [ ] **Step 2: Make shutdown observable in logs**
+- [x] **Step 2: Make shutdown observable in logs**
 
 У `src/main.ts` замінити функцію `shutdown`:
 
@@ -215,7 +215,7 @@ function shutdown(): void {
 }
 ```
 
-- [ ] **Step 3: Verify the exec mechanism locally (if Docker is available)**
+- [ ] **Step 3: Verify the exec mechanism locally (if Docker is available)** — пропущено, Docker daemon недоступний у середовищі виконавця; покладено на Step 4 per fallback у брифі.
 
 ```bash
 docker build -t tg-reminder-plan-check .
@@ -224,40 +224,42 @@ docker run --rm --entrypoint sh tg-reminder-plan-check -c "exec node -e 'console
 
 Expected: виводить `1`. Якщо Docker недоступний локально — пропустити, покластися на Step 4.
 
-- [ ] **Step 4: Verify build + tests still green**
+- [x] **Step 4: Verify build + tests still green**
 
 Run: `npm run build && npm test`
 Expected: PASS. (Після деплою: `fly logs -a mp-tg-reminder` має показувати подію `shutdown` при auto-stop машини — записати результат у PR/нотатку.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Dockerfile src/main.ts
 git commit -m "fix(deploy): exec node as PID 1 so SIGTERM reaches the graceful-shutdown handler"
 ```
 
+**Примітка:** незалежний review пройшов чисто; єдина Minor-знахідка — відсутній пояснювальний коментар над `CMD` у Dockerfile (функціонально не критично), винесено у фінальний огляд гілки.
+
 ---
 
-### Task 3: Видалити невикористаний @grammyjs/conversations
+### Task 3: Видалити невикористаний @grammyjs/conversations ✅ Виконано (коміт `9d15503`)
 
 **Files:**
 - Modify: `package.json`, `package-lock.json`
 
-- [ ] **Step 1: Confirm the package is unused**
+- [x] **Step 1: Confirm the package is unused**
 
 Run: `grep -rn "@grammyjs/conversations" src/ test/`
 Expected: порожній вивід.
 
-- [ ] **Step 2: Remove it**
+- [x] **Step 2: Remove it**
 
 Run: `npm uninstall @grammyjs/conversations`
 
-- [ ] **Step 3: Verify build + tests**
+- [x] **Step 3: Verify build + tests**
 
 Run: `npm run build && npm test`
 Expected: PASS, як до зміни.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add package.json package-lock.json
@@ -266,7 +268,7 @@ git commit -m "chore(deps): drop unused @grammyjs/conversations"
 
 ---
 
-### Task 4: Оновити better-sqlite3 до ^12 і спростити Docker-збірку
+### Task 4: Оновити better-sqlite3 до ^12 і спростити Docker-збірку ✅ Виконано (коміт `940b4a6`)
 
 **Files:**
 - Modify: `package.json`, `package-lock.json`
@@ -276,19 +278,19 @@ git commit -m "chore(deps): drop unused @grammyjs/conversations"
 - Consumes: `Database` API з `better-sqlite3` (використання в `src/infra/db/*` — API `prepare/run/get/all/pragma` стабільне між 9 і 12).
 - Produces: залежність із prebuilt-бінарниками для Node 22; Docker-збірка без C++-тулчейна.
 
-- [ ] **Step 1: Upgrade the packages**
+- [x] **Step 1: Upgrade the packages**
 
 ```bash
 npm install better-sqlite3@^12
 npm install -D @types/better-sqlite3@latest
 ```
 
-- [ ] **Step 2: Run the full suite against the new driver**
+- [x] **Step 2: Run the full suite against the new driver**
 
 Run: `npm run build && npm test`
 Expected: PASS — SQLite-репозиторії покриті `src/infra/__tests__/sqlite-reminder-repository.test.ts` та інтеграційними тестами.
 
-- [ ] **Step 3: Drop the build toolchain from the Dockerfile**
+- [x] **Step 3: Drop the build toolchain from the Dockerfile**
 
 Замінити перші два рядки `Dockerfile`:
 
@@ -299,12 +301,12 @@ WORKDIR /app
 
 (рядок `RUN apt-get update && apt-get install -y python3 make g++ ...` видалити — v12 має prebuilt-бінарники для linux x64/arm64 glibc).
 
-- [ ] **Step 4: Verify the Docker build (if Docker is available)**
+- [ ] **Step 4: Verify the Docker build (if Docker is available)** — пропущено, Docker daemon недоступний у середовищі виконавця; покладено на CI/деплой per fallback у брифі.
 
 Run: `docker build -t tg-reminder-plan-check .`
 Expected: збірка успішна без компіляції node-gyp. Якщо Docker недоступний — CI-збірка на Fly перевірить це на деплої.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json package-lock.json Dockerfile
