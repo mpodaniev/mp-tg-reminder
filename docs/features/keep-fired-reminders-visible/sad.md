@@ -62,7 +62,31 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
 
 ## 3. Context and scope
 
-<!-- pending Socratic walk -->
+The Reminder bot is a single-Owner Telegram bot that captures messages and fires them at a scheduled time. This feature widens the existing `/list` read view (it already shows the `pending` set) to also include `fired`-but-undeleted reminders, and retires the `Done` action from the fired-reminder message. It adds no new actor, no new external system, and no new trust boundary: every `/list` command and every list/fired-message button is processed only for the configured Owner; all other Telegram users are rejected and see nothing.
+
+<!-- brownfield: extends telegram-reminder + list-active-reminders (hexagonal TS bot, grammy + better-sqlite3); reuses the existing reminders/source_snapshots tables, the owner gate, tz utils, the deep-link/inline-fallback rule, and the existing list-handler/resolve-handler code paths. No new external dependency. -->
+
+**External systems (in / out):**
+
+| Actor or system | Type | Interaction |
+|---|---|---|
+| Owner | Person | Sends `/list`; taps Snooze/Delete/Source on a fired-reminder message (Done removed) |
+| Telegram Bot API | System (external) | Delivers updates (`message`, `callback_query`) via long-polling; receives the bot's outgoing messages |
+
+**C4 Context (L1):**
+
+```mermaid
+C4Context
+    title keep-fired-reminders-visible — System Context
+
+    Person(owner, "Owner", "Single authorised Telegram user")
+    System(bot, "Reminder bot", "Personal Telegram reminder bot; this feature widens /list to include fired reminders and retires the Done action")
+    System_Ext(tg, "Telegram Bot API", "Delivers updates and sends messages")
+
+    Rel(owner, tg, "Sends /list, taps fired-message buttons", "Telegram")
+    Rel(tg, bot, "Delivers updates (message, callback_query)", "long-polling")
+    Rel(bot, tg, "Sends the widened list message + action replies", "HTTPS")
+```
 
 ## 4. Solution strategy
 
