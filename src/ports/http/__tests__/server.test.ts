@@ -66,4 +66,22 @@ describe("buildHttpServer (ADR-0002, AC-04)", () => {
     await expect(res.json()).resolves.toEqual({ code: "http.internal_error", message: "Internal error" });
     errorConsole.mockRestore();
   });
+
+  it("returns 413 for a body over 1 MiB without invoking the handler", async () => {
+    const big = Buffer.alloc(1024 * 1024 + 1, 0x61);
+    const res = await fetch(`${baseUrl}/webhook/telegram`, { method: "POST", body: big });
+    expect(res.status).toBe(413);
+    await expect(res.json()).resolves.toEqual({
+      code: "http.payload_too_large",
+      message: "Request body exceeds limit",
+    });
+    expect(webhookHandler).not.toHaveBeenCalled();
+  });
+
+  it("still accepts a body just under the limit", async () => {
+    const ok = Buffer.alloc(1024, 0x61);
+    const res = await fetch(`${baseUrl}/webhook/telegram`, { method: "POST", body: ok });
+    expect(res.status).toBe(200);
+    expect(webhookHandler).toHaveBeenCalledTimes(1);
+  });
 });
