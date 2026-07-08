@@ -42,7 +42,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, routes: 
   try {
     const declared = parseInt(String(req.headers["content-length"] ?? ""), 10);
     if (!Number.isNaN(declared) && declared > MAX_BODY_BYTES) {
-      respondPayloadTooLarge(res);
+      respondPayloadTooLarge(req, res);
       return;
     }
 
@@ -54,8 +54,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, routes: 
         // Chunked transfer without a content-length header: stop buffering as
         // soon as the cap is crossed. The malicious client may observe a
         // connection error instead of the 413 body — that is acceptable.
-        respondPayloadTooLarge(res);
-        req.destroy();
+        respondPayloadTooLarge(req, res);
         return;
       }
       chunks.push(chunk as Buffer);
@@ -75,9 +74,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, routes: 
   }
 }
 
-function respondPayloadTooLarge(res: ServerResponse): void {
+function respondPayloadTooLarge(req: IncomingMessage, res: ServerResponse): void {
   res.statusCode = 413;
   res.setHeader("content-type", "application/json");
   res.setHeader("connection", "close");
-  res.end(JSON.stringify({ code: "http.payload_too_large", message: "Request body exceeds limit" }));
+  // Destroy the socket only after the 413 body has finished flushing to the
+  // client. Destroying immediately races the write and can surface as an
+  // EPIPE; destroying too late (or not at all) leaves an oversized/slow
+  // client holding the connection open indefinitely.
+  res.end(JSON.stringify({ code: "http.payload_too_large", message: "Request body exceeds limit" }), () => {
+    req.destroy();
+  });
 }

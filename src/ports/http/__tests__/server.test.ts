@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { AddressInfo } from "net";
+import http from "node:http";
 import { buildHttpServer } from "../server.js";
 
 describe("buildHttpServer (ADR-0002, AC-04)", () => {
@@ -83,5 +84,57 @@ describe("buildHttpServer (ADR-0002, AC-04)", () => {
     const res = await fetch(`${baseUrl}/webhook/telegram`, { method: "POST", body: ok });
     expect(res.status).toBe(200);
     expect(webhookHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 413 for a chunked body (no content-length) over 1 MiB and destroys the connection", async () => {
+    // fetch() always computes a content-length for a Buffer body, so the
+    // content-length pre-check branch would short-circuit before the
+    // streaming/chunked-over-limit branch ever runs. Use node:http directly,
+    // writing the body across many chunks with no content-length header, so
+    // Node sends it with Transfer-Encoding: chunked and exercises the
+    // streaming branch (and its req.destroy() call) instead.
+    const { port } = server.address() as AddressInfo;
+
+    const { statusCode, socketClosed } = await new Promise<{ statusCode: number; socketClosed: Promise<void> }>(
+      (resolve, reject) => {
+        const req = http.request(
+          { host: "127.0.0.1", port, path: "/webhook/telegram", method: "POST" },
+          (res) => {
+            const closed = new Promise<void>((closeResolve) => {
+              if (res.socket?.destroyed) {
+                closeResolve();
+              } else {
+                res.socket?.once("close", () => closeResolve());
+              }
+            });
+            res.resume();
+            res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, socketClosed: closed }));
+          },
+        );
+        req.on("error", () => {
+          // Writing past the point the server destroys the socket can surface
+          // as ECONNRESET/EPIPE on the request side; the response is already
+          // asserted via the response handler above regardless.
+        });
+
+        const chunk = Buffer.alloc(64 * 1024, 0x61); // 64 KiB per write, no content-length set
+        let written = 0;
+        const writeNext = () => {
+          if (req.destroyed || written > 1024 * 1024) {
+            if (!req.destroyed) req.end();
+            return;
+          }
+          written += chunk.length;
+          req.write(chunk, writeNext);
+        };
+        writeNext();
+
+        setTimeout(() => reject(new Error("timed out waiting for 413 response")), 5000).unref();
+      },
+    );
+
+    expect(statusCode).toBe(413);
+    await socketClosed;
+    expect(webhookHandler).not.toHaveBeenCalled();
   });
 });
