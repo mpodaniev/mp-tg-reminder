@@ -30,7 +30,7 @@
 | 3 | ✅ Зроблено | `@grammyjs/conversations` не використовується ніде в коді | `package.json:19` | Task 3 |
 | 4 | ✅ Зроблено | `better-sqlite3` 9.6 → 12.x (prebuilt для Node 22; прибрати python3/make/g++ зі збірки) | `package.json`, `Dockerfile:2` | Task 4 |
 | 5 | ✅ Зроблено | Runtime-образ містить devDependencies (typescript, vitest) | `Dockerfile:12` | Task 5 |
-| 6 | 🟠 Важливе | `vitest` 1.6 → 4.x (1.x без security-фіксів) | `package.json` | Task 6 |
+| 6 | ✅ Зроблено | `vitest` 1.6 → 4.x (1.x без security-фіксів) | `package.json` | Task 6 |
 | 7 | 🟠 Важливе | Немає перевіреної стратегії бекапів SQLite-волюма | `fly.toml:10` | Task 7 |
 | 8 | 🟡 Середнє | Немає README.md і .env.example у корені | корінь | Task 8 |
 | 9 | 🟡 Середнє | Немає лінтера; CI без lint-кроку; `ctx: any` у роутері | `.github/workflows/deploy.yml` | Task 9 |
@@ -367,22 +367,22 @@ git commit -m "chore(deploy): strip devDependencies from the runtime image"
 
 ---
 
-### Task 6: Оновити vitest до ^4
+### Task 6: Оновити vitest до ^4 ✅ Виконано (коміт `60ffa5e`, resolved 4.1.10)
 
 **Files:**
 - Modify: `package.json`, `package-lock.json`
 - Possibly modify: `vitest.config.ts` (лише якщо v4 відхилить наявні опції)
 
-- [ ] **Step 1: Upgrade**
+- [x] **Step 1: Upgrade**
 
 Run: `npm install -D vitest@^4`
 
-- [ ] **Step 2: Run the suite**
+- [x] **Step 2: Run the suite**
 
 Run: `npm test`
 Expected: PASS — конфіг мінімальний (`include`/`exclude`/`globals`/`passWithNoTests`), сумісний із v4. Якщо конфіг відхилено — прибрати/перейменувати лише ту опцію, на яку вкаже помилка, і перезапустити.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add package.json package-lock.json vitest.config.ts
