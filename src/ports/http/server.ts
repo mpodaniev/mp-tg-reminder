@@ -78,11 +78,23 @@ function respondPayloadTooLarge(req: IncomingMessage, res: ServerResponse): void
   res.statusCode = 413;
   res.setHeader("content-type", "application/json");
   res.setHeader("connection", "close");
-  // Destroy the socket only after the 413 body has finished flushing to the
-  // client. Destroying immediately races the write and can surface as an
-  // EPIPE; destroying too late (or not at all) leaves an oversized/slow
-  // client holding the connection open indefinitely.
-  res.end(JSON.stringify({ code: "http.payload_too_large", message: "Request body exceeds limit" }), () => {
-    req.destroy();
-  });
+  const body = JSON.stringify({ code: "http.payload_too_large", message: "Request body exceeds limit" });
+
+  // Respond only once the client has finished (or aborted) its upload:
+  // closing the socket while the client is still mid-write races the
+  // write and surfaces as a client-side EPIPE/ECONNRESET, even for a
+  // legitimate caller that simply sent a body over the cap. `resume()`
+  // drains and discards the remaining bytes without buffering them, so
+  // this adds no memory cost; Node's default requestTimeout (5 min)
+  // remains the backstop against a client that never finishes.
+  let responded = false;
+  const finish = (): void => {
+    if (responded) return;
+    responded = true;
+    res.end(body);
+  };
+  req.once("end", finish);
+  req.once("close", finish);
+  req.once("error", finish);
+  req.resume();
 }
