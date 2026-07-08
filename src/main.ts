@@ -114,6 +114,7 @@ httpServer.listen(PORT, () => {
 });
 
 function shutdown(): void {
+  console.log({ module: "main", event: "shutdown" });
   httpServer.close();
   void scheduler.stop().then(() => {
     db.close();

@@ -15,4 +15,4 @@ COPY package.json ./
 COPY migrations/ ./migrations/
 RUN mkdir -p /data
 
-CMD ["sh", "-c", "node dist/infra/db/migrate.js up && node dist/main.js"]
+CMD ["sh", "-c", "node dist/infra/db/migrate.js up && exec node dist/main.js"]
