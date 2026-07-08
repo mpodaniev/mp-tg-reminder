@@ -16,7 +16,6 @@
     "migrate:down": "node dist/infra/db/migrate.js down"
   },
   "dependencies": {
-    "@grammyjs/conversations": "^1.2.0",
     "better-sqlite3": "^9.4.3",
     "grammy": "^1.21.1"
   },
