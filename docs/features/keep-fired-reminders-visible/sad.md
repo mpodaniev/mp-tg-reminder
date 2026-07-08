@@ -100,7 +100,55 @@ C4Context
 
 No schema change and no new migration are implied by this feature (ADR-0002); `data-model` is expected to be a thin reconciliation pass, not new tables/columns.
 
-<!-- pending Socratic walk -->
+## 5. Building block view
+
+Hexagonal (ports-and-adapters), unchanged layering. The feature is a thin vertical slice touching two `app` use-cases, two `ports` handlers, and two `infra` adapters — no new container, no schema change, `domain` unchanged (the `done` transition stays defined but unreachable per ADR-0001).
+
+**Internal decomposition (new / touched):**
+
+```
+src/
+├── domain/
+│   └── state-machine.ts                 unchanged — `done` transition stays defined but unreachable (ADR-0001)
+├── app/
+│   ├── use-cases/
+│   │   ├── list-active-reminders.ts     CHANGED — query scope pending+fired; row gains status field; truncation key → capture-order (ADR-0002)
+│   │   └── resolve-reminder.ts          CHANGED — catches InvalidStateTransitionError on a stale `done` action → uniform not-active outcome (ADR-0001)
+│   └── ports/
+│       └── reminder-repository.ts       + method signature covers pending+fired scope, ordered by id ASC
+├── infra/
+│   ├── db/sqlite-reminder-repository.ts CHANGED — `state IN ('pending','fired')`, `ORDER BY id ASC` (ADR-0002)
+│   └── telegram/grammy-telegram-gateway.ts  CHANGED — fired-reminder keyboard drops `✅ Done` (ADR-0001)
+└── ports/
+    ├── handlers/list-handler.ts         CHANGED — renders scheduled/fired flag per row; suppresses cancel button on fired rows (AC-05, already pending-only today)
+    └── handlers/resolve-handler.ts      CHANGED — maps stale `done` callback to the existing uniform "no longer active" reply (ADR-0001)
+```
+
+**C4 Container (L2):**
+
+```mermaid
+C4Container
+    title keep-fired-reminders-visible — Containers
+
+    Person(owner, "Owner", "Single authorised Telegram user")
+    System_Ext(tg, "Telegram Bot API", "Messages + callback queries")
+
+    Container_Boundary(bot, "Reminder bot") {
+        Container(ports, "ports", "TypeScript / grammy", "list-handler (status flag, no cancel on fired) + resolve-handler (graceful stale done) — both changed")
+        Container(app, "app", "TypeScript", "ListActiveReminders (widened scope, capture-order) + ResolveReminder (stale-done handling) — both changed")
+        Container(domain, "domain", "TypeScript", "Reminder state machine — unchanged, done left dormant")
+        Container(infra, "infra", "TypeScript", "SqliteReminderRepository (widened query) + GrammyTelegramGateway (keyboard w/o Done) — both changed")
+        ContainerDb(db, "reminders.db", "SQLite", "reminders + source_snapshots (read); no schema change")
+    }
+
+    Rel(owner, tg, "Sends /list, taps Snooze/Delete/Source")
+    Rel(tg, ports, "Updates (message, callback_query)", "long-polling")
+    Rel(ports, app, "Invokes use-cases")
+    Rel(app, domain, "Applies transitions; rejects stale done")
+    Rel(app, infra, "Via ReminderRepository port")
+    Rel(infra, db, "Reads pending+fired / writes on resolve", "better-sqlite3")
+    Rel(ports, tg, "Sends widened list + action replies", "HTTPS")
+```
 
 ## 6. Runtime view
 
