@@ -29,7 +29,7 @@
 | 2 | ✅ Зроблено | `sh -c` як PID 1 не пересилає SIGTERM → graceful shutdown ніколи не виконується | `Dockerfile:18`, `src/main.ts:116` | Task 2 |
 | 3 | ✅ Зроблено | `@grammyjs/conversations` не використовується ніде в коді | `package.json:19` | Task 3 |
 | 4 | ✅ Зроблено | `better-sqlite3` 9.6 → 12.x (prebuilt для Node 22; прибрати python3/make/g++ зі збірки) | `package.json`, `Dockerfile:2` | Task 4 |
-| 5 | 🟠 Важливе | Runtime-образ містить devDependencies (typescript, vitest) | `Dockerfile:12` | Task 5 |
+| 5 | ✅ Зроблено | Runtime-образ містить devDependencies (typescript, vitest) | `Dockerfile:12` | Task 5 |
 | 6 | 🟠 Важливе | `vitest` 1.6 → 4.x (1.x без security-фіксів) | `package.json` | Task 6 |
 | 7 | 🟠 Важливе | Немає перевіреної стратегії бекапів SQLite-волюма | `fly.toml:10` | Task 7 |
 | 8 | 🟡 Середнє | Немає README.md і .env.example у корені | корінь | Task 8 |
@@ -315,12 +315,12 @@ git commit -m "chore(deps): better-sqlite3 ^12 with Node 22 prebuilds; drop gyp 
 
 ---
 
-### Task 5: Прибрати devDependencies з runtime-образу
+### Task 5: Прибрати devDependencies з runtime-образу ✅ Виконано (коміт `565c29a`)
 
 **Files:**
 - Modify: `Dockerfile`
 
-- [ ] **Step 1: Reinstall prod-only deps after the build stage**
+- [x] **Step 1: Reinstall prod-only deps after the build stage**
 
 Повний новий вміст `Dockerfile` (з урахуванням Task 2 і Task 4):
 
@@ -349,7 +349,7 @@ RUN mkdir -p /data
 CMD ["sh", "-c", "node dist/infra/db/migrate.js up && exec node dist/main.js"]
 ```
 
-- [ ] **Step 2: Verify the image (if Docker is available)**
+- [ ] **Step 2: Verify the image (if Docker is available)** — пропущено, Docker daemon недоступний у середовищі виконавця; покладено на CI/деплой per fallback у брифі.
 
 ```bash
 docker build -t tg-reminder-plan-check .
@@ -358,7 +358,7 @@ docker run --rm --entrypoint sh tg-reminder-plan-check -c "ls node_modules | gre
 
 Expected: `prod-only-ok` (typescript відсутній у runtime node_modules).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Dockerfile
