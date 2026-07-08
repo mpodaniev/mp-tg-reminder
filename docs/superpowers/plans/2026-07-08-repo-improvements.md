@@ -31,7 +31,7 @@
 | 4 | ✅ Зроблено | `better-sqlite3` 9.6 → 12.x (prebuilt для Node 22; прибрати python3/make/g++ зі збірки) | `package.json`, `Dockerfile:2` | Task 4 |
 | 5 | ✅ Зроблено | Runtime-образ містить devDependencies (typescript, vitest) | `Dockerfile:12` | Task 5 |
 | 6 | ✅ Зроблено | `vitest` 1.6 → 4.x (1.x без security-фіксів) | `package.json` | Task 6 |
-| 7 | 🟠 Важливе | Немає перевіреної стратегії бекапів SQLite-волюма | `fly.toml:10` | Task 7 |
+| 7 | ✅ Зроблено | Немає перевіреної стратегії бекапів SQLite-волюма | `fly.toml:10` | Task 7 |
 | 8 | 🟡 Середнє | Немає README.md і .env.example у корені | корінь | Task 8 |
 | 9 | 🟡 Середнє | Немає лінтера; CI без lint-кроку; `ctx: any` у роутері | `.github/workflows/deploy.yml` | Task 9 |
 | 10 | 🟡 Середнє | `setWebhook` + `bot.init()` на кожному холодному старті (кожні ~3 хв) — латентність і rate-limit | `src/main.ts:104` | Task 10 |
@@ -391,14 +391,16 @@ git commit -m "chore(deps): vitest ^4"
 
 ---
 
-### Task 7: Перевірити й задокументувати бекапи SQLite (ops, потребує flyctl)
+### Task 7: Перевірити й задокументувати бекапи SQLite (ops, потребує flyctl) ✅ Виконано (коміт `02f11ff`)
 
 **Files:**
 - Create: `docs/ops/backups.md`
 
 Ця задача потребує автентифікованого `flyctl`. Якщо його немає в середовищі виконавця — створити документ із командами та позначкою «результат перевірити вручну», і сказати про це в підсумку.
 
-- [ ] **Step 1: Inspect the volume and its snapshots**
+**Знахідка поза межами задачі:** виявлено другий, орфанований волюм `vol_4ql6x1xq39kqjqgr` (регіон `fra`, не прикріплений до жодної машини, ~3 тижні існує, і далі генерує щоденні снапшоти). Задокументовано в `docs/ops/backups.md`, видалення — окреме майбутнє завдання (поза межами цього плану).
+
+- [x] **Step 1: Inspect the volume and its snapshots**
 
 ```bash
 fly volumes list -a mp-tg-reminder
@@ -407,7 +409,7 @@ fly volumes snapshots list <volume-id> -a mp-tg-reminder
 
 Expected: волюм `reminders_data` існує; список щоденних снапшотів непорожній (Fly робить їх автоматично, ретеншен за замовчуванням 5 днів).
 
-- [ ] **Step 2: Write the ops doc**
+- [x] **Step 2: Write the ops doc**
 
 Створити `docs/ops/backups.md`:
 
@@ -442,7 +444,7 @@ Litestream-реплікація в об'єктне сховище (S3/R2) дал
 
 У рядку «Останнє підтвердження» записати фактичну дату, якщо Step 1 виконано.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/ops/backups.md
