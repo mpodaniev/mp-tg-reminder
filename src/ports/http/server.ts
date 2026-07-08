@@ -74,27 +74,44 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, routes: 
   }
 }
 
+// Node's server-level requestTimeout only guards the time before the
+// `request` event is dispatched — once handleRequest is running, it no
+// longer applies, so a client that stalls mid-upload must be bounded here.
+const DRAIN_TIMEOUT_MS = 5000;
+
 function respondPayloadTooLarge(req: IncomingMessage, res: ServerResponse): void {
   res.statusCode = 413;
   res.setHeader("content-type", "application/json");
   res.setHeader("connection", "close");
   const body = JSON.stringify({ code: "http.payload_too_large", message: "Request body exceeds limit" });
 
-  // Respond only once the client has finished (or aborted) its upload:
-  // closing the socket while the client is still mid-write races the
-  // write and surfaces as a client-side EPIPE/ECONNRESET, even for a
-  // legitimate caller that simply sent a body over the cap. `resume()`
-  // drains and discards the remaining bytes without buffering them, so
-  // this adds no memory cost; Node's default requestTimeout (5 min)
-  // remains the backstop against a client that never finishes.
+  // Respond only once the client has finished (or aborted) its upload, or
+  // the drain timeout elapses: closing the socket while the client is still
+  // mid-write races the write and surfaces as a client-side
+  // EPIPE/ECONNRESET, even for a legitimate caller that simply sent a body
+  // over the cap. `resume()` drains and discards the remaining bytes
+  // without buffering them, so waiting adds no memory cost. A client that
+  // stalls past the timeout gets its connection destroyed outright — by
+  // then it is indistinguishable from a hostile slow-loris, so an abrupt
+  // reset is an acceptable outcome.
   let responded = false;
-  const finish = (): void => {
+  const finish = (forceDestroy: boolean): void => {
     if (responded) return;
     responded = true;
-    res.end(body);
+    clearTimeout(timer);
+    req.removeListener("end", onFinish);
+    req.removeListener("close", onFinish);
+    req.removeListener("error", onFinish);
+    if (forceDestroy) {
+      res.end(body, () => req.destroy());
+    } else {
+      res.end(body);
+    }
   };
-  req.once("end", finish);
-  req.once("close", finish);
-  req.once("error", finish);
+  const onFinish = (): void => finish(false);
+  const timer = setTimeout(() => finish(true), DRAIN_TIMEOUT_MS);
+  req.once("end", onFinish);
+  req.once("close", onFinish);
+  req.once("error", onFinish);
   req.resume();
 }

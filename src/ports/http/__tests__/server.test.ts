@@ -137,4 +137,51 @@ describe("buildHttpServer (ADR-0002, AC-04)", () => {
     await socketClosed;
     expect(webhookHandler).not.toHaveBeenCalled();
   });
+
+  it(
+    "destroys a stalled over-limit connection after the drain timeout instead of hanging forever",
+    async () => {
+      // Declares a content-length over the cap, then writes only part of it
+      // and never finishes: the server must not wait on this client forever.
+      const { port } = server.address() as AddressInfo;
+
+      const { statusCode, socketClosed } = await new Promise<{ statusCode: number; socketClosed: Promise<void> }>(
+        (resolve, reject) => {
+          const req = http.request(
+            {
+              host: "127.0.0.1",
+              port,
+              path: "/webhook/telegram",
+              method: "POST",
+              headers: { "content-length": String(1024 * 1024 + 1) },
+            },
+            (res) => {
+              const closed = new Promise<void>((closeResolve) => {
+                if (res.socket?.destroyed) {
+                  closeResolve();
+                } else {
+                  res.socket?.once("close", () => closeResolve());
+                }
+              });
+              res.resume();
+              res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, socketClosed: closed }));
+            },
+          );
+          req.on("error", () => {
+            // The stalled write may itself surface as ECONNRESET once the
+            // server destroys the connection past the drain timeout.
+          });
+          req.write(Buffer.alloc(1024, 0x61));
+          // Never call req.end() — the client stalls mid-upload on purpose.
+
+          setTimeout(() => reject(new Error("timed out waiting for 413 response")), 8000).unref();
+        },
+      );
+
+      expect(statusCode).toBe(413);
+      await socketClosed;
+      expect(webhookHandler).not.toHaveBeenCalled();
+    },
+    9000,
+  );
 });
