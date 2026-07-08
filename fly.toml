@@ -5,8 +5,19 @@ primary_region = "ams"
 
 [env]
   DB_PATH = "/data/reminders.db"
-  SCHEDULER_INTERVAL_MS = "15000"
+  PORT = "3000"
 
 [[mounts]]
   source = "reminders_data"
   destination = "/data"
+
+# ADR-0001: the internal setInterval timer is gone — reminder checks now run
+# only when the external wake scheduler calls POST /wake. This block lets
+# Fly.io track inbound HTTP (webhook + wake calls) so the machine can stop
+# fully between them and start back up on the next request.
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0

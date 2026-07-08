@@ -14,31 +14,47 @@ import { ListActiveReminders } from "../app/use-cases/list-active-reminders.js";
 import { CancelPendingReminder } from "../app/use-cases/cancel-pending-reminder.js";
 import { localTodayAt } from "./tz-utils.js";
 import { AlreadyResolvedError, InvalidStateTransitionError, ReminderNotFoundError } from "../domain/errors.js";
-
-export type PendingCustom = { type: "capture" | "snooze"; reminderId: number };
-const pendingCustom = new Map<number, PendingCustom>();
+import { isOwner } from "./middleware/auth-middleware.js";
+import type { PendingPromptRepository, PendingPromptRow } from "../app/ports/pending-prompt-repository.js";
 
 // Uniform reply for a stale schedule attempt (quick-pick or custom time) on a
 // reminder that is no longer awaiting_time — mirrors list-handler's ADR-0002
 // no-op pattern so a stale tap never escapes to bot.catch.
 const NOT_ACTIVE_MESSAGE = "⚠️ Це нагадування більше не активне.";
 
+// AC-03: appended when the chosen time falls sooner than the configured wake
+// interval — an estimate for the ordinary case, not a guarantee (AC-07 covers
+// a missed wake cycle delaying it further, but never losing it).
+const DELIVERY_MAY_BE_LATE_NOTE =
+  "\n⏳ Під час звичайної роботи доставка може запізнитися до одного інтервалу пробудження.";
+
 export function buildRouter(
   repo: ReminderRepository,
   gateway: TelegramGateway,
-  ownerChatId: number
+  ownerChatId: number,
+  pendingPromptRepo: PendingPromptRepository,
+  wakeIntervalMs?: number
 ) {
   const captureUC = new CaptureMessage(repo);
-  const scheduleUC = new ScheduleReminder(repo);
+  // The wake interval driving the AC-03 delay estimate is threaded from the
+  // composition root so it tracks the deployed external cron cadence rather
+  // than a compile-time constant; falls back to ScheduleReminder's default.
+  const scheduleUC = new ScheduleReminder(repo, wakeIntervalMs);
   const snoozeUC = new SnoozeReminder(repo);
   const resolveUC = new ResolveReminder(repo);
   const listUC = new ListActiveReminders(repo);
   const cancelUC = new CancelPendingReminder(repo);
 
   return {
-    pendingCustom,
-
     async handleUpdate(ctx: any) {
+      // Single Owner-auth gate for every path (ADR-0003, AC-04b) — a non-Owner
+      // sender is denied here, before any handler dispatch, so a future handler
+      // is Owner-gated by construction instead of needing its own check.
+      const senderId: number | undefined = ctx.from?.id ?? ctx.message?.from?.id;
+      if (!(await isOwner(senderId, repo))) {
+        return;
+      }
+
       const msg = ctx.message;
 
       if (msg?.text?.startsWith("/settings")) {
@@ -53,18 +69,17 @@ export function buildRouter(
         return handleForwardedMessage(ctx, captureUC);
       }
 
-      // Handle pending custom-time text input
-      const senderId: number | undefined = ctx.from?.id ?? ctx.message?.from?.id;
-      if (msg?.text && senderId && pendingCustom.has(senderId)) {
-        return handleCustomTimeInput(ctx, scheduleUC, snoozeUC, repo, gateway, ownerChatId, senderId);
+      // Handle pending custom-time text input — pending_prompt is a durable
+      // singleton (data-model.md: only one Owner exists), so no per-sender key
+      // is needed once the gate above has already confirmed the sender is Owner.
+      if (msg?.text) {
+        const pending = await pendingPromptRepo.findPendingPrompt();
+        if (pending) {
+          return handleCustomTimeInput(ctx, scheduleUC, snoozeUC, repo, gateway, ownerChatId, pendingPromptRepo, pending);
+        }
       }
 
       if (ctx.callbackQuery) {
-        const callbackSenderId: number | undefined = ctx.from?.id;
-        if (callbackSenderId !== ownerChatId) {
-          return;
-        }
-
         const data: string = ctx.callbackQuery.data ?? "";
         const parts = data.split(":");
         const action = parts[0];
@@ -76,7 +91,7 @@ export function buildRouter(
         }
         if (action === "snooze_pick") {
           if (pick === "custom") {
-            pendingCustom.set(ownerChatId, { type: "snooze", reminderId });
+            await pendingPromptRepo.savePendingPrompt({ type: "snooze", reminderId, createdAt: Date.now() });
             await ctx.answerCallbackQuery?.();
             await ctx.reply?.("✏️ Введіть бажаний час (наприклад: за 2 год, завтра 15:00, 20.06.2026 09:00):");
             return;
@@ -93,7 +108,7 @@ export function buildRouter(
           return handleSource(ctx, repo, gateway, reminderId, ownerChatId);
         }
         if (action === "qpick") {
-          return handleQuickPick(ctx, scheduleUC, repo, reminderId, pick, ownerChatId);
+          return handleQuickPick(ctx, scheduleUC, repo, reminderId, pick, ownerChatId, pendingPromptRepo);
         }
       }
     },
@@ -106,10 +121,11 @@ async function handleQuickPick(
   repo: ReminderRepository,
   reminderId: number,
   pick: string,
-  ownerChatId: number
+  ownerChatId: number,
+  pendingPromptRepo: PendingPromptRepository
 ): Promise<void> {
   if (pick === "custom") {
-    pendingCustom.set(ownerChatId, { type: "capture", reminderId });
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId, createdAt: Date.now() });
     await ctx.answerCallbackQuery?.();
     await ctx.reply?.("✏️ Введіть бажаний час (наприклад: за 2 год, завтра 15:00, 20.06.2026 09:00):");
     return;
@@ -133,8 +149,9 @@ async function handleQuickPick(
     return;
   }
 
+  let deliveryMayBeLate: boolean;
   try {
-    await scheduleUC.execute({ reminderId, scheduledAtMs: scheduledAt });
+    ({ deliveryMayBeLate } = await scheduleUC.execute({ reminderId, scheduledAtMs: scheduledAt }));
   } catch (err) {
     if (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError) {
       await ctx.answerCallbackQuery?.();
@@ -154,7 +171,9 @@ async function handleQuickPick(
   }).format(new Date(scheduledAt));
 
   await ctx.answerCallbackQuery?.("✅ Нагадування заплановано");
-  await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+  await ctx.reply?.(
+    `✅ Нагадування заплановано на ${formatted}${deliveryMayBeLate ? DELIVERY_MAY_BE_LATE_NOTE : ""}`
+  );
 }
 
 async function handleCustomTimeInput(
@@ -164,10 +183,10 @@ async function handleCustomTimeInput(
   repo: ReminderRepository,
   gateway: TelegramGateway,
   ownerChatId: number,
-  senderId: number
+  pendingPromptRepo: PendingPromptRepository,
+  pending: PendingPromptRow
 ): Promise<void> {
-  const pending = pendingCustom.get(senderId)!;
-  pendingCustom.delete(senderId);
+  await pendingPromptRepo.clearPendingPrompt();
 
   const text: string = ctx.message?.text ?? "";
   const settings = await repo.getOwnerSettings();
@@ -175,13 +194,13 @@ async function handleCustomTimeInput(
 
   const scheduledAt = parseCustomTime(text, timezone);
   if (scheduledAt === null) {
-    pendingCustom.set(senderId, pending);
+    await pendingPromptRepo.savePendingPrompt(pending);
     await ctx.reply?.("❌ Не вдалося розпізнати час. Спробуйте: «за 2 год», «завтра 15:00», «20.06.2026 09:00»");
     return;
   }
 
   if (scheduledAt <= Date.now()) {
-    pendingCustom.set(senderId, pending);
+    await pendingPromptRepo.savePendingPrompt(pending);
     await ctx.reply?.("❌ Час нагадування повинен бути у майбутньому. Введіть інший час:");
     return;
   }
@@ -197,8 +216,13 @@ async function handleCustomTimeInput(
 
   if (pending.type === "capture") {
     try {
-      await scheduleUC.execute({ reminderId: pending.reminderId, scheduledAtMs: scheduledAt });
-      await ctx.reply?.(`✅ Нагадування заплановано на ${formatted}`);
+      const { deliveryMayBeLate } = await scheduleUC.execute({
+        reminderId: pending.reminderId,
+        scheduledAtMs: scheduledAt,
+      });
+      await ctx.reply?.(
+        `✅ Нагадування заплановано на ${formatted}${deliveryMayBeLate ? DELIVERY_MAY_BE_LATE_NOTE : ""}`
+      );
     } catch (err) {
       if (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError) {
         await ctx.reply?.(NOT_ACTIVE_MESSAGE);

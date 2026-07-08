@@ -108,4 +108,31 @@ describe("FireDueReminders use case", () => {
 
     expect(gateway.sendReminder).not.toHaveBeenCalled();
   });
+
+  it("calling execute() twice for the same due reminder (retried wake call) sends exactly once (AC-06)", async () => {
+    seedDueReminder(repo);
+
+    await useCase.execute();
+    await useCase.execute();
+
+    expect(gateway.sendReminder).toHaveBeenCalledTimes(1);
+    expect(repo.reminders.get(1)!.state).toBe("fired");
+  });
+
+  it("a reminder left in firing after a failed send is retried but never sent successfully twice (AC-06)", async () => {
+    seedDueReminder(repo);
+    (gateway.sendReminder as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error("network blip"))
+      .mockResolvedValue({ messageId: 42 });
+
+    await useCase.execute(); // fails, left in "firing"
+    expect(repo.reminders.get(1)!.state).toBe("firing");
+
+    await useCase.execute(); // retries, succeeds
+    expect(repo.reminders.get(1)!.state).toBe("fired");
+
+    await useCase.execute(); // a later tick must not re-send the already-fired reminder
+
+    expect(gateway.sendReminder).toHaveBeenCalledTimes(2);
+  });
 });
