@@ -191,7 +191,123 @@ sequenceDiagram
 
 The guard sits in `app`, ahead of any call into `Domain` — this is deliberate: `fired → done` is a *valid* transition in the state machine, so a still-`fired`-and-undeleted reminder would otherwise resolve successfully instead of being rejected, which would violate AC-06.
 
-> **Flagged for `sequences`:** these two cover the critical happy path (AC-01/AC-02) and the graceful-degradation path (AC-06). Remaining flows (AC-03 position stability across transitions, AC-04 delete-only invariant, AC-05 no-cancel-on-fired, AC-07 non-Owner rejection, AC-08 overflow truncation) are the next stage's job.
+**Critical flow 3: non-Owner requests the list (AC-07)**
+
+```mermaid
+sequenceDiagram
+    actor NonOwner
+    participant Ports
+    NonOwner->>Ports: sends list command
+    Ports->>Ports: owner gate check fails
+    Ports-->>NonOwner: generic reply — no reminders revealed, scheduled or fired
+```
+
+The gate rejects before any call into `App`/`Infra`/`DB` — a non-Owner never causes a read of reminder data, so there is nothing to leak even at the message-content level.
+
+**Critical flow 4: list response respects the per-window overflow limit (AC-08)**
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    participant Infra
+    participant DB
+    Owner->>Ports: sends list command
+    Ports->>Ports: owner gate check
+    Ports->>App: list active reminders
+    App->>Infra: find pending + fired, ordered by id ASC
+    Infra->>DB: read pending+fired (state IN (...))
+    DB-->>Infra: rows
+    Infra-->>App: reminders
+    alt visible count fits the per-window message limit
+        App->>App: build view model — full list, capture-order position
+    else visible count exceeds the per-window message limit
+        App->>App: build view model — earliest-added rows that fit + overflow indicator for the rest
+    end
+    App-->>Ports: list view model
+    Ports-->>Owner: single message regardless of branch — never more than one
+```
+
+Both branches still produce exactly one bot message — the overflow branch trades completeness for the single-message NFR, never spilling into a second send.
+
+**Critical flow 5: fired reminder keeps its position and stays visible until explicit delete (AC-03, AC-04)**
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    participant Infra
+    participant DB
+    Note over App,DB: reminder already visible in the list at some capture-order position
+    alt reminder fires (scheduler-driven)
+        App->>Infra: transition pending → fired
+        Infra->>DB: persist state change (id unchanged)
+    else Owner snoozes to a new time
+        Owner->>Ports: taps Snooze
+        Ports->>App: snooze reminder
+        App->>Infra: update fire_at, state resets per existing rule
+        Infra->>DB: persist fire_at + state change (id unchanged)
+    else Owner explicitly deletes
+        Owner->>Ports: taps Delete
+        Ports->>App: delete reminder
+        App->>Infra: remove reminder
+        Infra->>DB: delete row
+    end
+    Owner->>Ports: sends list command
+    Ports->>App: list active reminders
+    App->>Infra: find pending + fired, ordered by id ASC
+    Infra->>DB: read pending+fired (state IN (...))
+    DB-->>Infra: rows
+    Infra-->>App: reminders
+    Note over App: position key is capture-order (id) — unaffected by fire/snooze; the deleted reminder is simply absent, everything else keeps its slot
+    App-->>Ports: list view model
+    Ports-->>Owner: single message — deleted entry gone, all others at their original position
+```
+
+Position is keyed on `id` (capture order), never on state or `fire_at` — so fire and snooze are no-ops for ordering, and only the delete branch removes a row from the next query's result set.
+
+**Critical flow 6: fired entry offers no cancel action (AC-05)**
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Ports
+    participant App
+    Owner->>Ports: sends list command
+    Ports->>App: list active reminders
+    App-->>Ports: list view model (status flag per row)
+    loop for each row in the view model
+        alt row status is scheduled
+            Ports->>Ports: render Snooze + Cancel + Delete
+        else row status is fired
+            Ports->>Ports: render Snooze + Delete only — no Cancel
+        end
+    end
+    Ports-->>Owner: single message — actions match each row's status
+```
+
+Cancel is a scheduling-only action — a fired reminder has nothing left to cancel, so the renderer omits the button per row rather than offering an action that would no-op or confuse.
+
+**Coverage check.**
+
+User stories → flows: US-01 → flows 1, 3, 4; US-02 → flow 1; US-03 → flow 5; US-04 → flows 5, 2; US-05 → flows 2, 6.
+
+Acceptance criteria → flows:
+
+| AC | Covered by |
+|---|---|
+| AC-01 | Flow 1 (happy path) |
+| AC-02 | Flow 1 (status flag per row) |
+| AC-03 | Flow 5 (position unaffected by fire/snooze) |
+| AC-04 | Flow 5 (only delete removes a row) |
+| AC-05 | Flow 6 (Cancel omitted on fired rows) |
+| AC-06 | Flow 2 (stale Done guarded) |
+| AC-07 | Flow 3 (non-Owner gate rejection) |
+| AC-08 | Flow 4 (overflow truncation branch) |
+
+Every §4 user story maps to ≥1 flow and every §5 AC maps to a flow or branch — no silent gaps.
 
 ## 7. Deployment view
 
