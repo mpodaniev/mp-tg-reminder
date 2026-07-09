@@ -47,7 +47,7 @@ describe("GrammyTelegramGateway", () => {
     gateway = new GrammyTelegramGateway(mockApi);
   });
 
-  it("sendReminder calls api.sendMessage with correct chat_id and 4-button keyboard", async () => {
+  it("sendReminder calls api.sendMessage with correct chat_id and a 3-button keyboard (no Done, ADR-0001)", async () => {
     const reminder = makeFiredReminder();
     const result = await gateway.sendReminder(777, reminder);
 
@@ -58,13 +58,13 @@ describe("GrammyTelegramGateway", () => {
     const buttons = opts.reply_markup.inline_keyboard.flat();
     const callbackDatas = buttons.map((b: any) => b.callback_data);
     expect(callbackDatas.some((d: string) => d.includes("snooze"))).toBe(true);
-    expect(callbackDatas.some((d: string) => d.includes("done"))).toBe(true);
     expect(callbackDatas.some((d: string) => d.includes("delete"))).toBe(true);
     expect(callbackDatas.some((d: string) => d.includes("source"))).toBe(true);
+    expect(callbackDatas.some((d: string) => d.startsWith("done"))).toBe(false);
     expect(result.messageId).toBe(99);
   });
 
-  it("sendReminder with protected media includes restriction note and all 4 buttons (AC-12)", async () => {
+  it("sendReminder with protected media includes restriction note and the 3-button keyboard (AC-12, ADR-0001)", async () => {
     const reminder = makeFiredReminder({ isMediaProtected: true, messageText: "Secret note" });
     await gateway.sendReminder(777, reminder);
 
@@ -72,12 +72,12 @@ describe("GrammyTelegramGateway", () => {
     expect(text).toContain("Secret note");
     expect(text).toMatch(/unavailable.*restriction|restriction.*unavailable/i);
     const buttons = opts.reply_markup.inline_keyboard.flat();
-    expect(buttons.length).toBe(4);
+    expect(buttons.length).toBe(3);
     const datas = buttons.map((b: any) => b.callback_data);
     expect(datas.some((d: string) => d.includes("snooze"))).toBe(true);
-    expect(datas.some((d: string) => d.includes("done"))).toBe(true);
     expect(datas.some((d: string) => d.includes("delete"))).toBe(true);
     expect(datas.some((d: string) => d.includes("source"))).toBe(true);
+    expect(datas.some((d: string) => d.startsWith("done"))).toBe(false);
   });
 
   it("sendReminder with no text and protected media uses fallback text + note (AC-12)", async () => {

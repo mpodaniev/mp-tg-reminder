@@ -32,15 +32,14 @@ export class GrammyTelegramGateway implements TelegramGateway {
       text = `👤 From: ${snapshot.senderName}\n\n${text}`;
     }
 
+    // Done is retired (ADR-0001) — Delete is the sole resolving action; Snooze
+    // reschedules rather than resolves.
     const keyboard = [
       [
         { text: "⏰ Snooze", callback_data: `snooze:${reminder.id}` },
-        { text: "✅ Done", callback_data: `done:${reminder.id}` },
-      ],
-      [
         { text: "🗑 Delete", callback_data: `delete:${reminder.id}` },
-        { text: "🔗 Go to source", callback_data: `source:${reminder.id}` },
       ],
+      [{ text: "🔗 Go to source", callback_data: `source:${reminder.id}` }],
     ];
 
     const result = await this.api.sendMessage(chatId, text, {
