@@ -5,6 +5,7 @@ import {
 } from "../list-active-reminders.js";
 import { InMemoryReminderRepository } from "./helpers/in-memory-repo.js";
 import { Reminder } from "../../../domain/reminder.js";
+import { ScheduledTime } from "../../../domain/value-objects/scheduled-time.js";
 import type { SourceSnapshot } from "../../../domain/value-objects/source-snapshot.js";
 
 const OWNER_ID = 123456789;
@@ -145,5 +146,37 @@ describe("ListActiveReminders use-case (T4)", () => {
     expect(vm.rows.map((r) => r.reminderId)).toEqual(
       Array.from({ length: MAX_ACTIVE_LIST_ROWS }, (_, i) => i + 1)
     );
+  });
+
+  it("keeps list position stable across fire, deliver, and snooze; only delete removes it (AC-03/AC-04)", async () => {
+    repo.reminders.set(1, pending(1, 5000, "other"));
+    const target = pending(2, 1000, "target");
+    repo.reminders.set(2, target);
+    const positionOf = (vm: Awaited<ReturnType<typeof useCase.execute>>) =>
+      vm.rows.findIndex((r) => r.reminderId === 2);
+
+    let vm = await useCase.execute();
+    expect(vm.rows.map((r) => r.reminderId)).toEqual([1, 2]);
+    expect(positionOf(vm)).toBe(1);
+
+    target.startFiring();
+    await repo.update(target);
+
+    target.markFired(555);
+    await repo.update(target);
+    vm = await useCase.execute();
+    expect(positionOf(vm)).toBe(1);
+    expect(vm.rows[1]!.status).toBe("fired");
+
+    target.snooze(ScheduledTime.from(Date.now() + 100_000));
+    await repo.update(target);
+    vm = await useCase.execute();
+    expect(positionOf(vm)).toBe(1);
+    expect(vm.rows[1]!.status).toBe("scheduled");
+
+    target.cancel();
+    await repo.update(target);
+    vm = await useCase.execute();
+    expect(vm.rows.map((r) => r.reminderId)).toEqual([1]);
   });
 });
