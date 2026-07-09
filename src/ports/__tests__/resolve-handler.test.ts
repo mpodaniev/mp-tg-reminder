@@ -76,6 +76,18 @@ describe("handleResolve callback handler", () => {
     expect(ctx.answerCallbackQuery).toHaveBeenCalled();
   });
 
+  it("a stale done tap on a non-existent/forged reminderId degrades gracefully, no unhandled throw (keep-fired-reminders-visible AC-06)", async () => {
+    const gateway = makeFakeGateway();
+    const ctx = { answerCallbackQuery: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(
+      handleResolve(ctx as any, resolveUC, gateway, 999, "done", CHAT_ID)
+    ).resolves.not.toThrow();
+
+    expect(gateway.deleteMessage).not.toHaveBeenCalled();
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(expect.stringMatching(/видалити/i));
+  });
+
   it("deletes message on delete action (AC-07)", async () => {
     const r = Reminder.reconstitute({ id: 3, snapshot: makeSnapshot(3), state: "fired", firedMessageId: 44 });
     repo.reminders.set(3, r);

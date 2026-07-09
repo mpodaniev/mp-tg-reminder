@@ -1,7 +1,7 @@
 import type { ResolveReminder } from "../../app/use-cases/resolve-reminder.js";
 import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import { TelegramDeleteWindowError } from "../../app/ports/telegram-gateway.js";
-import { InvalidStateTransitionError } from "../../domain/errors.js";
+import { InvalidStateTransitionError, ReminderNotFoundError } from "../../domain/errors.js";
 
 type MinimalCtx = {
   answerCallbackQuery: (text?: string) => Promise<any>;
@@ -23,7 +23,10 @@ export async function handleResolve(
   try {
     reminder = await resolveUC.execute({ reminderId, action });
   } catch (err) {
-    if (action === "done" && err instanceof InvalidStateTransitionError) {
+    if (
+      action === "done" &&
+      (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError)
+    ) {
       await ctx.answerCallbackQuery(DONE_RETIRED_MESSAGE);
       return;
     }

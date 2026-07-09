@@ -1,5 +1,5 @@
 import type { ReminderRepository } from "../ports/reminder-repository.js";
-import { InvalidStateTransitionError } from "../../domain/errors.js";
+import { InvalidStateTransitionError, ReminderNotFoundError } from "../../domain/errors.js";
 
 export interface ResolveReminderInput {
   reminderId: number;
@@ -11,7 +11,7 @@ export class ResolveReminder {
 
   async execute(input: ResolveReminderInput) {
     const reminder = await this.repo.findById(input.reminderId);
-    if (!reminder) throw new Error(`Reminder ${input.reminderId} not found`);
+    if (!reminder) throw new ReminderNotFoundError(input.reminderId);
 
     // Done is retired (ADR-0001): a handler-level guard, not a caught domain
     // error — `fired → done` is itself a *valid* transition, so a still-fired
