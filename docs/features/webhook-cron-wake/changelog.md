@@ -58,3 +58,27 @@ AC-03 (honest "may be late" estimate from the real wake interval), AC-04 + AC-04
 (both endpoints reject non-Telegram/non-scheduler callers; every handler denies a
 non-Owner sender), AC-05 (custom-time prompt survives a restart), AC-06 (idempotent,
 no double delivery), AC-07 (catch-up after a wake-source gap, none lost).
+
+## webhook-cron-wake — 2026-07-09 fix: deploy fails loudly on a non-serving boot
+
+**What:** Adds an unauthenticated `GET /health` → 200 liveness route and a matching
+Fly `[[http_service.checks]]` block, so a release whose process crash-loops on boot
+(e.g. a missing required secret) fails the `fly deploy` instead of reporting success.
+
+**Why:** `fly.toml` had no health check and `restart.policy = on-failure` masked the
+crash, so a non-serving release (v11, missing secrets) went green and was only caught
+by hand. See [spec](spec.md) AC-08 and
+[_fixes/2026-07-09-deploy-liveness-healthcheck.md](_fixes/2026-07-09-deploy-liveness-healthcheck.md).
+
+**How to use:** No action needed — `GET /health` is automatic and unauthenticated;
+Fly's proxy probes it every 15s (`grace_period` 10s) once a machine is running. It
+does not run against a stopped machine, so scale-to-zero is unaffected.
+
+**Operational notes:**
+- Migration: none.
+- Config: none (no new env var).
+- Rollback: revert the commit; `fly.toml` reverts to no health check (loses the
+  loud-failure guarantee, does not affect runtime behavior).
+
+**Acceptance criteria delivered:** AC-08 (a non-serving release is reported failed,
+not green; scale-to-zero preserved).

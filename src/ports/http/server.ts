@@ -22,6 +22,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, routes: 
   const method = req.method ?? "";
   const path = (req.url ?? "").split("?")[0];
 
+  // Unauthenticated liveness probe. It sits before the auth-gated POST
+  // handlers so a platform health check (fly.toml) can tell a booted,
+  // serving process from a crash-looped one — a non-serving deploy then
+  // fails loudly instead of reporting success. Cheap and side-effect free,
+  // so it does not pin a scale-to-zero machine awake.
+  if (method === "GET" && path === "/health") {
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/plain");
+    res.end("ok");
+    return;
+  }
+
   const handler =
     method === "POST" && path === "/webhook/telegram"
       ? routes.webhook

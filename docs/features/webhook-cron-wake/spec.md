@@ -137,6 +137,12 @@ Traceability: the devil's-advocate review, run against the actual code, found se
 **When** the wake source eventually succeeds again
 **Then** the system fires any reminders that became due during the gap, and the Owner is not left with a silently dropped reminder — delivery is delayed, never lost
 
+### AC-08 — deploy liveness <!-- added-by-fix: 2026-07-09 -->
+
+**Given** a release is deployed but the process cannot serve requests (e.g. it crash-loops on a missing required secret and never opens its port)
+**When** the deploy completes
+**Then** the deploy is reported as failed rather than successful — a non-serving release must not go green — via a platform liveness check against an unauthenticated health endpoint, without keeping a scale-to-zero machine perpetually running
+
 ## 6. Non-functional requirements
 
 **Interval terminology used throughout this spec:** the *idle window* (AC-01) is the platform's own auto-stop threshold — how long the machine sits with no inbound HTTP activity before the platform stops it; it does not by itself affect reminder timing. The *wake interval* (this section, §8, and AC-03/AC-07, where earlier drafts also said "check interval" or "expected cycles" — all the same value) is the period between calls from the external scheduler to the wake endpoint, and directly bounds the delivery-delay row below.

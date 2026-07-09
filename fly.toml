@@ -21,3 +21,16 @@ primary_region = "ams"
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
+
+  # Liveness check against the unauthenticated GET /health route. A boot that
+  # crash-loops (e.g. a missing required secret exits the process) never opens
+  # port 3000, so this check never passes and `fly deploy` fails loudly instead
+  # of reporting a green non-serving release. Fly does not run checks against a
+  # stopped machine, so this does not defeat scale-to-zero; grace_period covers
+  # a healthy cold start.
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
