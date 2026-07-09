@@ -24,6 +24,13 @@ export interface ReminderRepository {
    */
   findActivePendingOrdered(): Promise<Reminder[]>;
 
+  /**
+   * All Visible (`pending` or `fired`, not yet explicitly deleted) reminders,
+   * ordered by capture order (id ascending, ADR-0002). Backs the widened
+   * /list read path (AC-01/AC-03/AC-08).
+   */
+  findVisibleOrdered(): Promise<Reminder[]>;
+
   findFiring(): Promise<Reminder[]>;
 
   findAwaitingOlderThan(cutoffMs: number): Promise<Reminder[]>;

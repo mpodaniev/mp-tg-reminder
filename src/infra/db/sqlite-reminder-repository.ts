@@ -122,6 +122,24 @@ export class SqliteReminderRepository implements ReminderRepository {
     return rows.map((row) => rowToReminder(row, this.extractSnapshot(row)));
   }
 
+  async findVisibleOrdered(): Promise<Reminder[]> {
+    // id is the SQLite rowid alias — rows are already physically ordered by
+    // id, so ORDER BY id ASC needs no index (ADR-0002, data-model.md Indexes).
+    const rows = this.db
+      .prepare(
+        `SELECT r.*, s.id as s_id, s.chat_id, s.message_id, s.chat_username,
+                s.sender_name, s.sender_username, s.message_text, s.media_file_id,
+                s.media_type, s.is_media_protected, s.created_at as s_created_at
+         FROM reminders r
+         JOIN source_snapshots s ON s.id = r.snapshot_id
+         WHERE r.state IN ('pending', 'fired')
+         ORDER BY r.id ASC`
+      )
+      .all() as any[];
+
+    return rows.map((row) => rowToReminder(row, this.extractSnapshot(row)));
+  }
+
   async findFiring(): Promise<Reminder[]> {
     const rows = this.db
       .prepare(

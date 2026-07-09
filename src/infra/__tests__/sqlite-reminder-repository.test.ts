@@ -206,3 +206,64 @@ describe("SqliteReminderRepository.findActivePendingOrdered (T3, AC-01)", () => 
     expect(detail).toContain("idx_reminders_state_scheduled_at");
   });
 });
+
+describe("SqliteReminderRepository.findVisibleOrdered (T1, AC-01/AC-08)", () => {
+  let memDb: Database.Database;
+  let memRepo: SqliteReminderRepository;
+
+  function seedReminder(state: string, scheduledAt: number | null): number {
+    const snapId = memDb
+      .prepare(
+        `INSERT INTO source_snapshots
+         (chat_id, message_id, chat_username, sender_name, sender_username,
+          message_text, media_file_id, media_type, is_media_protected, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(100, 200, null, null, null, "text", null, null, 0, 1000)
+      .lastInsertRowid as number;
+    return memDb
+      .prepare(
+        `INSERT INTO reminders (snapshot_id, state, scheduled_at, fired_at, delivered_at, fired_message_id, created_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, ?)`
+      )
+      .run(snapId, state, scheduledAt, 1000)
+      .lastInsertRowid as number;
+  }
+
+  beforeEach(() => {
+    memDb = new Database(":memory:");
+    memDb.pragma("foreign_keys = ON");
+    runMigrationsUp(memDb);
+    memRepo = new SqliteReminderRepository(memDb);
+  });
+
+  afterEach(() => memDb.close());
+
+  it("returns pending and fired reminders, ordered by id ascending (capture order)", async () => {
+    const first = seedReminder("pending", 5000);
+    const second = seedReminder("fired", 1000);
+    const third = seedReminder("pending", 2000);
+
+    const result = await memRepo.findVisibleOrdered();
+
+    expect(result.map((r) => r.id)).toEqual([first, second, third]);
+  });
+
+  it("excludes done, deleted, expired, awaiting_time, and firing reminders", async () => {
+    seedReminder("done", 1000);
+    seedReminder("deleted", 1000);
+    seedReminder("expired", 1000);
+    seedReminder("awaiting_time", null);
+    seedReminder("firing", 1000);
+    const visible = seedReminder("pending", 1000);
+
+    const result = await memRepo.findVisibleOrdered();
+
+    expect(result.map((r) => r.id)).toEqual([visible]);
+  });
+
+  it("returns an empty array when there are no visible reminders", async () => {
+    seedReminder("deleted", 1000);
+    expect(await memRepo.findVisibleOrdered()).toEqual([]);
+  });
+});
