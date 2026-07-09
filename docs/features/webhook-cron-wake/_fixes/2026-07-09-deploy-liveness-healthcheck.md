@@ -3,7 +3,7 @@ slug: webhook-cron-wake
 date: 2026-07-09
 triage: gap
 acs: [AC-08]
-commit: <pending>
+commit: 586bc103adebbe442a1acfc2c440dbb90e877c65
 recurrence_of: none
 ---
 
