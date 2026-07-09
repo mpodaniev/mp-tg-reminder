@@ -5,14 +5,16 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T1 | Widen repository query scope to pending+fired, ordered by capture order | infra | Mykhailo Podaniev | S | — | todo |
-| T2 | List use-case: per-row status flag + capture-order truncation | app | Mykhailo Podaniev | M | T1 | todo |
-| T3 | List handler: render scheduled/fired flag, suppress Cancel on fired rows | ports | Mykhailo Podaniev | S | T2 | todo |
-| T4 | Telegram gateway: drop the Done button from the fired-reminder keyboard | infra | Mykhailo Podaniev | S | — | todo |
-| T5 | Resolve-reminder use-case: guard the done action before any domain call | app | Mykhailo Podaniev | S | — | todo |
-| T6 | Resolve handler: map guarded done outcome to uniform "no longer active" reply | ports | Mykhailo Podaniev | S | T5, T4 | todo |
-| T7 | Integration test: position stable across fire/deliver/snooze; only delete removes | tests | Mykhailo Podaniev | S | T2 | todo |
-| T8 | Integration test: oversized visible set sends exactly one message + overflow indicator | tests | Mykhailo Podaniev | S | T3 | todo |
-| T9 | Extend owner-gate test: non-Owner sees nothing when fired reminders exist | tests | Mykhailo Podaniev | S | T3 | todo |
+| T1 | Widen repository query scope to pending+fired, ordered by capture order | infra | Mykhailo Podaniev | S | — | done |
+| T2 | List use-case: per-row status flag + capture-order truncation | app | Mykhailo Podaniev | M | T1 | done |
+| T3 | List handler: render scheduled/fired flag, suppress Cancel on fired rows | ports | Mykhailo Podaniev | S | T2 | done |
+| T4 | Telegram gateway: drop the Done button from the fired-reminder keyboard | infra | Mykhailo Podaniev | S | — | done |
+| T5 | Resolve-reminder use-case: guard the done action before any domain call | app | Mykhailo Podaniev | S | — | done |
+| T6 | Resolve handler: map guarded done outcome to uniform "no longer active" reply | ports | Mykhailo Podaniev | S | T5, T4 | done |
+| T7 | Integration test: position stable across fire/deliver/snooze; only delete removes | tests | Mykhailo Podaniev | S | T2 | done |
+| T8 | Integration test: oversized visible set sends exactly one message + overflow indicator | tests | Mykhailo Podaniev | S | T3 | done |
+| T9 | Extend owner-gate test: non-Owner sees nothing when fired reminders exist | tests | Mykhailo Podaniev | S | T3 | done |
+| T10 | Review fix: include stuck firing reminders in the visible list | infra | Mykhailo Podaniev | S | — | done |
+| T11 | Review fix: stale done tap on a forged reminderId degrades gracefully | app | Mykhailo Podaniev | S | — | done |
 
-**Total:** 9 tasks, ~4 person-days (fits size S — a small handful of PRs).
+**Total:** 11 tasks, ~4 person-days (fits size S — a small handful of PRs). T10/T11 added post-review (`_review/review-2026-07-09.md`, CHANGES REQUESTED).

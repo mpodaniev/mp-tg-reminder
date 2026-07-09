@@ -1,10 +1,15 @@
 import type { ResolveReminder } from "../../app/use-cases/resolve-reminder.js";
 import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import { TelegramDeleteWindowError } from "../../app/ports/telegram-gateway.js";
+import { InvalidStateTransitionError, ReminderNotFoundError } from "../../domain/errors.js";
 
 type MinimalCtx = {
   answerCallbackQuery: (text?: string) => Promise<any>;
 };
+
+// Retired-action toast (ADR-0001) — a stale `done` tap from a pre-rollout
+// message must not crash and must not resolve the reminder (AC-06).
+const DONE_RETIRED_MESSAGE = "⚠️ Цю дію прибрано. Використайте 🗑 Видалити.";
 
 export async function handleResolve(
   ctx: MinimalCtx,
@@ -14,21 +19,29 @@ export async function handleResolve(
   action: "done" | "delete",
   ownerChatId: number
 ): Promise<void> {
-  const reminder = await resolveUC.execute({ reminderId, action });
+  let reminder;
+  try {
+    reminder = await resolveUC.execute({ reminderId, action });
+  } catch (err) {
+    if (
+      action === "done" &&
+      (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError)
+    ) {
+      await ctx.answerCallbackQuery(DONE_RETIRED_MESSAGE);
+      return;
+    }
+    throw err;
+  }
 
   if (reminder.firedMessageId) {
     try {
       await gateway.deleteMessage(ownerChatId, reminder.firedMessageId);
     } catch (err) {
       if (err instanceof TelegramDeleteWindowError) {
-        const placeholder =
-          action === "done"
-            ? "✅ Нагадування виконано"
-            : "🗑 Нагадування видалено";
         await gateway.editMessageToPlaceholder(
           ownerChatId,
           reminder.firedMessageId,
-          placeholder
+          "🗑 Нагадування видалено"
         );
       } else {
         throw err;

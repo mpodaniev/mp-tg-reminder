@@ -45,11 +45,24 @@ function renderListMessage(
 
   vm.rows.forEach((row, i) => {
     const n = i + 1;
-    lines.push(`${n}. ${row.preview} — ${formatFireTime(row.fireTimeMs, timezone)}`);
-    inlineKeyboard.push([
-      { text: `🗑 Скасувати #${n}`, callback_data: `${LIST_CALLBACK.CANCEL}:${row.reminderId}` },
-      { text: `🔗 Джерело #${n}`, callback_data: `${LIST_CALLBACK.SOURCE}:${row.reminderId}` },
-    ]);
+    const statusFlag = row.status === "fired" ? "🔔 спрацювало" : "🕒 заплановано";
+    lines.push(
+      `${n}. ${row.preview} — ${formatFireTime(row.fireTimeMs, timezone)} (${statusFlag})`
+    );
+    // Cancel only makes sense on a still-scheduled reminder — a fired one has
+    // nothing left to cancel (AC-05).
+    const rowButtons: any[] = [];
+    if (row.status === "scheduled") {
+      rowButtons.push({
+        text: `🗑 Скасувати #${n}`,
+        callback_data: `${LIST_CALLBACK.CANCEL}:${row.reminderId}`,
+      });
+    }
+    rowButtons.push({
+      text: `🔗 Джерело #${n}`,
+      callback_data: `${LIST_CALLBACK.SOURCE}:${row.reminderId}`,
+    });
+    inlineKeyboard.push(rowButtons);
   });
 
   if (vm.overflowCount > 0) {

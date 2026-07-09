@@ -46,7 +46,7 @@ afterAll(() => {
 });
 
 describe("E2E: capture → fire → resolve journey", () => {
-  it("full journey: capture → schedule → fire → done (AC-02, AC-04, AC-06)", async () => {
+  it("full journey: capture → schedule → fire → delete (AC-02, AC-04, keep-fired-reminders-visible AC-06)", async () => {
     const captureUC = new CaptureMessage(repo);
     const scheduleUC = new ScheduleReminder(repo);
     const gateway = makeFakeGateway(200);
@@ -85,9 +85,15 @@ describe("E2E: capture → fire → resolve journey", () => {
     expect(fired!.deliveredAt).not.toBeNull();
     expect(fired!.firedMessageId).toBe(200);
 
-    // 4. Resolve done
-    const resolved = await resolveUC.execute({ reminderId: reminder.id!, action: "done" });
-    expect(resolved.state).toBe("done");
+    // 4. A stale "done" tap is guarded — never resolves, no state change (ADR-0001).
+    await expect(
+      resolveUC.execute({ reminderId: reminder.id!, action: "done" })
+    ).rejects.toThrow();
+    expect((await repo.findById(reminder.id!))!.state).toBe("fired");
+
+    // 5. Delete is the sole resolving action.
+    const resolved = await resolveUC.execute({ reminderId: reminder.id!, action: "delete" });
+    expect(resolved.state).toBe("deleted");
   });
 
   it("full journey: capture → schedule → fire → snooze → fire again (AC-05)", async () => {

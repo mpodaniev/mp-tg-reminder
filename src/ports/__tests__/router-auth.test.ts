@@ -171,6 +171,17 @@ describe("Router: dispatch/auth characterization pre-T7 (AC-04b)", () => {
     expect(ctx.reply).not.toHaveBeenCalled();
   });
 
+  it("non-Owner: /list reveals nothing even when a fired reminder is present (AC-05/AC-07)", async () => {
+    repo.reminders.set(
+      1,
+      Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "fired", firedAt: 1, scheduledAt: 1 })
+    );
+    const ctx = makeCommandCtx(NON_OWNER_ID, "/list");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+  });
+
   it("non-Owner: plain text with no pending prompt is a silent no-op (pendingCustom is only ever keyed by ownerChatId today)", async () => {
     const ctx = makeCommandCtx(NON_OWNER_ID, "за 2 год");
     await router.handleUpdate(ctx as any);

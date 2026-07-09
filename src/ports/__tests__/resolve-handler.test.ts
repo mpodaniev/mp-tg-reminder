@@ -47,7 +47,7 @@ describe("handleResolve callback handler", () => {
     resolveUC = new ResolveReminder(repo);
   });
 
-  it("deletes message on done action (AC-06)", async () => {
+  it("guards a stale done tap: no message mutation, uniform toast, no state change (keep-fired-reminders-visible AC-06)", async () => {
     const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "fired", firedMessageId: 42 });
     repo.reminders.set(1, r);
     const gateway = makeFakeGateway();
@@ -55,19 +55,37 @@ describe("handleResolve callback handler", () => {
 
     await handleResolve(ctx as any, resolveUC, gateway, 1, "done", CHAT_ID);
 
-    expect(gateway.deleteMessage).toHaveBeenCalledWith(CHAT_ID, 42);
-    expect(repo.reminders.get(1)!.state).toBe("done");
+    expect(gateway.deleteMessage).not.toHaveBeenCalled();
+    expect(gateway.editMessageToPlaceholder).not.toHaveBeenCalled();
+    expect(repo.reminders.get(1)!.state).toBe("fired");
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(expect.stringMatching(/видалити/i));
   });
 
-  it("falls back to editMessageToPlaceholder when delete throws TelegramDeleteWindowError (AC-06)", async () => {
-    const r = Reminder.reconstitute({ id: 2, snapshot: makeSnapshot(2), state: "fired", firedMessageId: 43 });
+  it("a stale done tap on an already-deleted reminder still degrades gracefully, no crash (keep-fired-reminders-visible AC-06)", async () => {
+    const r = Reminder.reconstitute({ id: 2, snapshot: makeSnapshot(2), state: "deleted", firedMessageId: 43 });
     repo.reminders.set(2, r);
-    const gateway = makeFakeGateway(true);
+    const gateway = makeFakeGateway();
     const ctx = { answerCallbackQuery: vi.fn().mockResolvedValue(undefined) };
 
-    await handleResolve(ctx as any, resolveUC, gateway, 2, "done", CHAT_ID);
+    await expect(
+      handleResolve(ctx as any, resolveUC, gateway, 2, "done", CHAT_ID)
+    ).resolves.not.toThrow();
 
-    expect(gateway.editMessageToPlaceholder).toHaveBeenCalled();
+    expect(gateway.deleteMessage).not.toHaveBeenCalled();
+    expect(repo.reminders.get(2)!.state).toBe("deleted");
+    expect(ctx.answerCallbackQuery).toHaveBeenCalled();
+  });
+
+  it("a stale done tap on a non-existent/forged reminderId degrades gracefully, no unhandled throw (keep-fired-reminders-visible AC-06)", async () => {
+    const gateway = makeFakeGateway();
+    const ctx = { answerCallbackQuery: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(
+      handleResolve(ctx as any, resolveUC, gateway, 999, "done", CHAT_ID)
+    ).resolves.not.toThrow();
+
+    expect(gateway.deleteMessage).not.toHaveBeenCalled();
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(expect.stringMatching(/видалити/i));
   });
 
   it("deletes message on delete action (AC-07)", async () => {

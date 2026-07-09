@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { ResolveReminder } from "../resolve-reminder.js";
 import { InMemoryReminderRepository } from "./helpers/in-memory-repo.js";
 import { Reminder } from "../../../domain/reminder.js";
+import { InvalidStateTransitionError } from "../../../domain/errors.js";
 import type { SourceSnapshot } from "../../../domain/value-objects/source-snapshot.js";
 
 const OWNER_ID = 123456789;
@@ -31,7 +32,7 @@ describe("ResolveReminder use case", () => {
     useCase = new ResolveReminder(repo);
   });
 
-  it("resolves fired reminder as done (AC-06)", async () => {
+  it("guards the retired done action before any domain call — never resolves, no state change (keep-fired-reminders-visible AC-06)", async () => {
     const r = Reminder.reconstitute({
       id: 1,
       snapshot: makeSnapshot(),
@@ -39,8 +40,13 @@ describe("ResolveReminder use case", () => {
       firedMessageId: 42,
     });
     repo.reminders.set(1, r);
-    const updated = await useCase.execute({ reminderId: 1, action: "done" });
-    expect(updated.state).toBe("done");
+
+    await expect(
+      useCase.execute({ reminderId: 1, action: "done" })
+    ).rejects.toThrow(InvalidStateTransitionError);
+
+    const stillFired = await repo.findById(1);
+    expect(stillFired!.state).toBe("fired");
   });
 
   it("resolves fired reminder as deleted (AC-07)", async () => {

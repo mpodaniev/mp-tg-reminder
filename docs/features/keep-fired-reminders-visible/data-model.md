@@ -52,7 +52,7 @@ No column added, removed, or retyped. `state` keeps its existing 7-value `CHECK`
 |---|---|---|---|
 | `id` | INTEGER | PK, AUTOINCREMENT | monotonic — this feature repurposes it as the capture-order sort/truncation key (ADR-0002), no schema change needed since it already satisfies "assigned once at capture, never recomputed" |
 | `snapshot_id` | INTEGER | NOT NULL, FK → `source_snapshots(id)` | unchanged |
-| `state` | TEXT | NOT NULL, CHECK (7 values) | unchanged; the widened list query now reads `IN ('pending','fired')` instead of `= 'pending'` — a query-scope change, not a schema change |
+| `state` | TEXT | NOT NULL, CHECK (7 values) | unchanged; the widened list query now reads `IN ('pending','firing','fired')` instead of `= 'pending'` — a query-scope change, not a schema change |
 | `scheduled_at` | INTEGER | nullable | unchanged; no longer the list's sort key (superseded by `id`, ADR-0002) but still used for the scheduler-tick query and rendered per row |
 | `fired_at` | INTEGER | nullable | unchanged |
 | `delivered_at` | INTEGER | nullable | unchanged |
@@ -60,7 +60,7 @@ No column added, removed, or retyped. `state` keeps its existing 7-value `CHECK`
 | `created_at` | INTEGER | NOT NULL | unchanged |
 
 **Aggregate root:** `reminders` (root of the `reminders` ↔ `source_snapshots` relationship, `source_snapshots` is the dependent/immutable-capture side).
-**Access patterns:** widened list read → `WHERE state IN ('pending','fired') ORDER BY id ASC` (see Indexes below for why no new index is added).
+**Access patterns:** widened list read → `WHERE state IN ('pending','firing','fired') ORDER BY id ASC` (see Indexes below for why no new index is added).
 **Constraints:** unchanged — `state` `CHECK`, FK → `source_snapshots(id)` (already indexed by `idx_reminders_snapshot_id`).
 
 ### `source_snapshots` — unchanged
@@ -80,7 +80,7 @@ Compared the domain `Reminder` type (`src/domain/reminder.ts`) and `state-machin
 
 **Considered and rejected: a new index for the widened list query.**
 
-- **Candidate:** `idx_reminders_state (state)` or a composite touching `id`, to back `WHERE state IN ('pending','fired') ORDER BY id ASC`.
+- **Candidate:** `idx_reminders_state (state)` or a composite touching `id`, to back `WHERE state IN ('pending','firing','fired') ORDER BY id ASC`.
 - **Rejected because:** `id` is the table's `INTEGER PRIMARY KEY` (SQLite rowid alias), so rows are already physically ordered by `id` — `ORDER BY id ASC` needs no index to avoid a sort. The remaining cost is a full-table scan to filter `state IN (...)`, which is acceptable at this bot's scale (single Owner, personal use, dataset size is at most a few hundred rows) and within the existing p95 ≤ 1000 ms NFR (spec §6, unchanged from `list-active-reminders`) with no profiling evidence of a bottleneck.
 - **Revisit if:** row count grows enough that a full scan measurably threatens the latency NFR — not expected under the single-Owner constraint (`sad.md` §2).
 

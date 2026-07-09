@@ -33,6 +33,16 @@ function pending(id: number, scheduledAt: number, text: string | null): Reminder
   return Reminder.reconstitute({ id, snapshot: snapshot(id, text), state: "pending", scheduledAt });
 }
 
+function fired(id: number, text: string | null): Reminder {
+  return Reminder.reconstitute({
+    id,
+    snapshot: snapshot(id, text),
+    state: "fired",
+    scheduledAt: id,
+    firedAt: id,
+  });
+}
+
 function makeCtx(fromId: number) {
   return { from: { id: fromId }, reply: vi.fn().mockResolvedValue(undefined) };
 }
@@ -92,12 +102,51 @@ describe("handleList — /list command handler (T6)", () => {
     expect(text).toMatch(/ще\s+10/);
   });
 
+  it("hits the 4096-char budget before the row cap and still sends exactly one message with an overflow indicator (AC-08)", async () => {
+    // long previews (~100 chars each) blow the char budget well before MAX_ACTIVE_LIST_ROWS
+    for (let i = 1; i <= 50; i++) {
+      repo.reminders.set(i, pending(i, 1_000_000 + i, "y".repeat(100)));
+    }
+    const ctx = makeCtx(OWNER_ID);
+    await handleList(ctx as any, repo, listUC);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const [text] = ctx.reply.mock.calls[0]!;
+    expect(text).toMatch(/ще\s+\d+/);
+    // earliest-added (lowest id) rows are the ones kept
+    expect(text).toContain("y".repeat(100).slice(0, 20));
+  });
+
   it("reveals nothing to a non-Owner (AC-05)", async () => {
     repo.reminders.set(1, pending(1, 1000, "secret"));
     const ctx = makeCtx(NON_OWNER_ID);
     await handleList(ctx as any, repo, listUC);
 
     expect(ctx.reply).not.toHaveBeenCalled();
+  });
+
+  it("marks fired rows with a distinct flag and omits Cancel; scheduled rows keep Cancel (AC-02/AC-05)", async () => {
+    const fireMs = Date.UTC(2026, 5, 20, 11, 30, 0);
+    repo.reminders.set(1, pending(1, fireMs, "still scheduled"));
+    repo.reminders.set(2, fired(2, "already fired"));
+
+    const ctx = makeCtx(OWNER_ID);
+    await handleList(ctx as any, repo, listUC);
+
+    const [text, opts] = ctx.reply.mock.calls[0]!;
+    const lines = text.split("\n");
+    const scheduledLine = lines.find((l: string) => l.includes("still scheduled"));
+    const firedLine = lines.find((l: string) => l.includes("already fired"));
+    expect(scheduledLine).not.toEqual(firedLine);
+    expect(firedLine).toMatch(/спрацювал/i);
+    expect(scheduledLine).not.toMatch(/спрацювал/i);
+
+    const keyboard = opts.reply_markup.inline_keyboard.flat();
+    expect(keyboard.some((b: any) => b.callback_data === "cancel:1")).toBe(true);
+    expect(keyboard.some((b: any) => b.callback_data === "cancel:2")).toBe(false);
+    // Delete stays out of scope for the list itself (spec §3 Non-goal) — only
+    // Source remains on fired rows alongside the omitted Cancel.
+    expect(keyboard.some((b: any) => b.callback_data === "source:2")).toBe(true);
   });
 
   it("emits a structured timing log around the list use-case (NFR §6 / QG-3)", async () => {
