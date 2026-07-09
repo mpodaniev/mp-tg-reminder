@@ -1,0 +1,23 @@
+name: Wake scheduler
+
+# Pings POST /wake so the bot fires due reminders and expires stale prompts.
+# The app has no in-process timer (webhook-cron-wake ADR-0001), so this
+# external cadence is what actually drives time-based delivery.
+# GitHub Actions' minimum schedule granularity is 5 minutes and runs may drift
+# under load — keep the app's WAKE_INTERVAL_MS in sync with this interval so the
+# owner-facing "delivery may be late" estimate stays honest (README §env vars).
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /wake
+        run: |
+          curl -fsS -X POST https://mp-tg-reminder.fly.dev/wake \
+            -H "Authorization: Bearer ${{ secrets.WAKE_BEARER_TOKEN }}" \
+            --max-time 90
