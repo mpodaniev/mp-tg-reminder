@@ -94,7 +94,7 @@ C4Context
 
 **Top strategic choices (the seeds for ADRs):**
 
-1. **Widen the list query scope** — one repository query, `state IN ('pending', 'fired')` instead of `state = 'pending'`; the view model gains a per-row status field (`scheduled` / `fired`). Single vertical slice (infra + app), reversible, no legitimate competing approach worth an ADR — folded into §5.
+1. **Widen the list query scope** — one repository query, `state IN ('pending', 'firing', 'fired')` instead of `state = 'pending'`; the view model gains a per-row status field (`scheduled` / `fired`). Single vertical slice (infra + app), reversible, no legitimate competing approach worth an ADR — folded into §5.
 2. **Retire the Done action, with a graceful stale-callback path** — removes the `✅ Done` button from the fired-reminder keyboard; the resolve handler intercepts any `done` action **before** invoking the domain transition (a handler-level guard, not a catch on the domain's response) and always replies with the existing uniform "no longer active" message. This is necessary because `fired → done` is a *valid* domain transition (`state-machine.ts`) — a still-`fired`-and-undeleted reminder would otherwise resolve successfully instead of being rejected, violating AC-06. Touches `infra` (gateway keyboard) and `ports` (resolve handler guard); leaves a dormant, now fully unreachable `domain` state/transition. → **ADR-0001**.
 3. **Use the monotonic reminder `id` as the sole ordering + truncation key** — capture-order position, superseding the fire-time ordering `list-active-reminders` used; no schema change since `id` already satisfies "assigned once at capture, never recomputed." → **ADR-0002**.
 
@@ -112,12 +112,12 @@ src/
 │   └── state-machine.ts                 unchanged — `done` transition stays defined but unreachable (ADR-0001)
 ├── app/
 │   ├── use-cases/
-│   │   ├── list-active-reminders.ts     CHANGED — query scope pending+fired; row gains status field; truncation key → capture-order (ADR-0002)
+│   │   ├── list-active-reminders.ts     CHANGED — query scope pending+firing+fired; row gains status field; truncation key → capture-order (ADR-0002)
 │   │   └── resolve-reminder.ts          CHANGED — guards `action === "done"` before calling the domain transition (never invokes `resolve_done`) → uniform not-active outcome, regardless of the reminder's actual state (ADR-0001)
 │   └── ports/
-│       └── reminder-repository.ts       + method signature covers pending+fired scope, ordered by id ASC
+│       └── reminder-repository.ts       + method signature covers pending+firing+fired scope, ordered by id ASC
 ├── infra/
-│   ├── db/sqlite-reminder-repository.ts CHANGED — `state IN ('pending','fired')`, `ORDER BY id ASC` (ADR-0002)
+│   ├── db/sqlite-reminder-repository.ts CHANGED — `state IN ('pending','firing','fired')`, `ORDER BY id ASC` (ADR-0002)
 │   └── telegram/grammy-telegram-gateway.ts  CHANGED — fired-reminder keyboard drops `✅ Done` (ADR-0001)
 └── ports/
     ├── handlers/list-handler.ts         CHANGED — renders scheduled/fired flag per row; suppresses cancel button on fired rows (AC-05, already pending-only today)
@@ -146,7 +146,7 @@ C4Container
     Rel(ports, app, "Invokes use-cases")
     Rel(app, domain, "Applies transitions (done never invoked — guarded in ports)")
     Rel(app, infra, "Via ReminderRepository port")
-    Rel(infra, db, "Reads pending+fired / writes on resolve", "better-sqlite3")
+    Rel(infra, db, "Reads pending+firing+fired / writes on resolve", "better-sqlite3")
     Rel(ports, tg, "Sends widened list + action replies", "HTTPS")
 ```
 
@@ -164,8 +164,8 @@ sequenceDiagram
     Owner->>Ports: sends list command
     Ports->>Ports: owner gate check
     Ports->>App: list active reminders
-    App->>Infra: find pending + fired, ordered by id ASC
-    Infra->>DB: read pending+fired (state IN (...))
+    App->>Infra: find pending + firing + fired, ordered by id ASC
+    Infra->>DB: read pending+firing+fired (state IN (...))
     DB-->>Infra: rows
     Infra-->>App: reminders
     App->>App: build view model (status flag per row; truncate by capture order + overflow)
@@ -216,8 +216,8 @@ sequenceDiagram
     Owner->>Ports: sends list command
     Ports->>Ports: owner gate check
     Ports->>App: list active reminders
-    App->>Infra: find pending + fired, ordered by id ASC
-    Infra->>DB: read pending+fired (state IN (...))
+    App->>Infra: find pending + firing + fired, ordered by id ASC
+    Infra->>DB: read pending+firing+fired (state IN (...))
     DB-->>Infra: rows
     Infra-->>App: reminders
     alt visible count fits the per-window message limit
@@ -242,8 +242,8 @@ sequenceDiagram
     participant DB
     Note over App,DB: reminder already visible in the list at some capture-order position
     alt reminder fires (scheduler-driven)
-        App->>Infra: transition pending → fired
-        Infra->>DB: persist state change (id unchanged)
+        App->>Infra: transition pending → firing → fired (both persisted; visible throughout, incl. a stuck/retrying firing window, ADR-0005)
+        Infra->>DB: persist each state change (id unchanged)
     else Owner snoozes to a new time
         Owner->>Ports: taps Snooze
         Ports->>App: snooze reminder
@@ -257,8 +257,8 @@ sequenceDiagram
     end
     Owner->>Ports: sends list command
     Ports->>App: list active reminders
-    App->>Infra: find pending + fired, ordered by id ASC
-    Infra->>DB: read pending+fired (state IN (...))
+    App->>Infra: find pending + firing + fired, ordered by id ASC
+    Infra->>DB: read pending+firing+fired (state IN (...))
     DB-->>Infra: rows
     Infra-->>App: reminders
     Note over App: position key is capture-order (id) — unaffected by fire/snooze; the deleted reminder is simply absent, everything else keeps its slot

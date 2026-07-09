@@ -46,7 +46,7 @@ export class InMemoryReminderRepository implements ReminderRepository {
 
   async findVisibleOrdered(): Promise<Reminder[]> {
     return [...this.reminders.values()]
-      .filter((r) => r.state === "pending" || r.state === "fired")
+      .filter((r) => r.state === "pending" || r.state === "firing" || r.state === "fired")
       .sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
   }
 

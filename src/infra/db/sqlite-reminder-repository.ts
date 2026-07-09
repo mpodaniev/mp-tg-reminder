@@ -114,7 +114,7 @@ export class SqliteReminderRepository implements ReminderRepository {
                 s.media_type, s.is_media_protected, s.created_at as s_created_at
          FROM reminders r
          JOIN source_snapshots s ON s.id = r.snapshot_id
-         WHERE r.state IN ('pending', 'fired')
+         WHERE r.state IN ('pending', 'firing', 'fired')
          ORDER BY r.id ASC`
       )
       .all() as any[];

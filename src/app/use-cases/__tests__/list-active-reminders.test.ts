@@ -161,6 +161,9 @@ describe("ListActiveReminders use-case (T4)", () => {
 
     target.startFiring();
     await repo.update(target);
+    vm = await useCase.execute();
+    expect(positionOf(vm)).toBe(1);
+    expect(vm.rows[1]!.status).toBe("fired");
 
     target.markFired(555);
     await repo.update(target);

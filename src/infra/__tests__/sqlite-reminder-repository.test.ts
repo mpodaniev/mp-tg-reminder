@@ -176,17 +176,29 @@ describe("SqliteReminderRepository.findVisibleOrdered (T1, AC-01/AC-08)", () => 
     expect(result.map((r) => r.id)).toEqual([first, second, third]);
   });
 
-  it("excludes done, deleted, expired, awaiting_time, and firing reminders", async () => {
+  it("excludes done, deleted, expired, and awaiting_time reminders", async () => {
     seedReminder("done", 1000);
     seedReminder("deleted", 1000);
     seedReminder("expired", 1000);
     seedReminder("awaiting_time", null);
-    seedReminder("firing", 1000);
     const visible = seedReminder("pending", 1000);
 
     const result = await memRepo.findVisibleOrdered();
 
     expect(result.map((r) => r.id)).toEqual([visible]);
+  });
+
+  it("includes firing reminders — a stuck/retrying delivery still needs the Owner's attention (AC-04, CONTEXT.md invariant)", async () => {
+    seedReminder("done", 1000);
+    seedReminder("deleted", 1000);
+    const pendingId = seedReminder("pending", 2000);
+    const firingId = seedReminder("firing", 1000);
+
+    const result = await memRepo.findVisibleOrdered();
+
+    expect(result.map((r) => r.id).sort((a, b) => a - b)).toEqual(
+      [pendingId, firingId].sort((a, b) => a - b)
+    );
   });
 
   it("returns an empty array when there are no visible reminders", async () => {

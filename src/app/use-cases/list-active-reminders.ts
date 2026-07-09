@@ -39,7 +39,9 @@ function toRow(reminder: Reminder): ActiveReminderRow {
     reminderId: reminder.id!,
     preview: buildPreview(reminder.snapshot.messageText),
     fireTimeMs: reminder.scheduledAt ?? 0,
-    status: reminder.state === "fired" ? "fired" : "scheduled",
+    // A "firing" reminder has already fired (delivery is retrying, ADR-0005) —
+    // it reads as "fired" to the Owner, not "scheduled" (AC-02, AC-04).
+    status: reminder.state === "pending" ? "scheduled" : "fired",
   };
 }
 
