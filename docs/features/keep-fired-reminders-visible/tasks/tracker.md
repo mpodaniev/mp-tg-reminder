@@ -13,6 +13,6 @@
 | T6 | Resolve handler: map guarded done outcome to uniform "no longer active" reply | ports | Mykhailo Podaniev | S | T5, T4 | done |
 | T7 | Integration test: position stable across fire/deliver/snooze; only delete removes | tests | Mykhailo Podaniev | S | T2 | done |
 | T8 | Integration test: oversized visible set sends exactly one message + overflow indicator | tests | Mykhailo Podaniev | S | T3 | done |
-| T9 | Extend owner-gate test: non-Owner sees nothing when fired reminders exist | tests | Mykhailo Podaniev | S | T3 | todo |
+| T9 | Extend owner-gate test: non-Owner sees nothing when fired reminders exist | tests | Mykhailo Podaniev | S | T3 | done |
 
 **Total:** 9 tasks, ~4 person-days (fits size S — a small handful of PRs).
