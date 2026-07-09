@@ -34,6 +34,16 @@ function pending(id: number, scheduledAt: number, text: string | null): Reminder
   });
 }
 
+function fired(id: number, text: string | null): Reminder {
+  return Reminder.reconstitute({
+    id,
+    snapshot: snapshot(id, text),
+    state: "fired",
+    scheduledAt: id,
+    firedAt: id,
+  });
+}
+
 describe("ListActiveReminders use-case (T4)", () => {
   let repo: InMemoryReminderRepository;
   let useCase: ListActiveReminders;
@@ -100,5 +110,40 @@ describe("ListActiveReminders use-case (T4)", () => {
     expect(vm.rows.length).toBeLessThan(MAX_ACTIVE_LIST_ROWS);
     expect(vm.overflowCount).toBe(MAX_ACTIVE_LIST_ROWS - vm.rows.length);
     expect(vm.overflowCount).toBeGreaterThan(0);
+  });
+
+  it("includes fired-but-undeleted reminders alongside pending ones (AC-01)", async () => {
+    repo.reminders.set(1, pending(1, 1000, "scheduled"));
+    repo.reminders.set(2, fired(2, "already fired"));
+
+    const vm = await useCase.execute();
+
+    expect(vm.rows.map((r) => r.reminderId)).toEqual([1, 2]);
+  });
+
+  it("marks each row as scheduled or fired (AC-02)", async () => {
+    repo.reminders.set(1, pending(1, 1000, "scheduled"));
+    repo.reminders.set(2, fired(2, "already fired"));
+
+    const vm = await useCase.execute();
+
+    expect(vm.rows.find((r) => r.reminderId === 1)!.status).toBe("scheduled");
+    expect(vm.rows.find((r) => r.reminderId === 2)!.status).toBe("fired");
+  });
+
+  it("orders and truncates by capture order (id ascending), earliest-added kept (AC-03/AC-08)", async () => {
+    const total = MAX_ACTIVE_LIST_ROWS + 5;
+    for (let i = 1; i <= total; i++) {
+      // fire time descending so a fire-time sort would disagree with id order
+      repo.reminders.set(i, i % 2 === 0 ? fired(i, "r") : pending(i, total - i, "r"));
+    }
+
+    const vm = await useCase.execute();
+
+    expect(vm.rows.length).toBe(MAX_ACTIVE_LIST_ROWS);
+    expect(vm.overflowCount).toBe(5);
+    expect(vm.rows.map((r) => r.reminderId)).toEqual(
+      Array.from({ length: MAX_ACTIVE_LIST_ROWS }, (_, i) => i + 1)
+    );
   });
 });

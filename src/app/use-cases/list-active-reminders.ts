@@ -10,10 +10,14 @@ export const PREVIEW_MAX_CHARS = 100;
 /** Per-row chrome charged against the char budget (fire-time line + numbering). */
 const PER_ROW_OVERHEAD_CHARS = 40;
 
+export type ReminderVisibleStatus = "scheduled" | "fired";
+
 export interface ActiveReminderRow {
   reminderId: number;
   preview: string;
   fireTimeMs: number;
+  /** Whether this reminder is still scheduled or has already fired (AC-02). */
+  status: ReminderVisibleStatus;
 }
 
 export interface ActiveListViewModel {
@@ -35,13 +39,15 @@ function toRow(reminder: Reminder): ActiveReminderRow {
     reminderId: reminder.id!,
     preview: buildPreview(reminder.snapshot.messageText),
     fireTimeMs: reminder.scheduledAt ?? 0,
+    status: reminder.state === "fired" ? "fired" : "scheduled",
   };
 }
 
 /**
- * Keep the soonest-firing rows that fit one message: bounded by both the fixed
- * row cap and the 4096-char budget — whichever bites first (ADR-0003). The first
- * row is always kept so a single oversized reminder still renders.
+ * Keep the earliest-added (capture-order, ADR-0002) rows that fit one message:
+ * bounded by both the fixed row cap and the 4096-char budget — whichever bites
+ * first (ADR-0003). The first row is always kept so a single oversized reminder
+ * still renders. Relies on `allRows` already being in capture order.
  */
 function truncateToFit(allRows: ActiveReminderRow[]): {
   rows: ActiveReminderRow[];
@@ -63,7 +69,7 @@ export class ListActiveReminders {
   constructor(private readonly repo: ReminderRepository) {}
 
   async execute(): Promise<ActiveListViewModel> {
-    const reminders = await this.repo.findActivePendingOrdered();
+    const reminders = await this.repo.findVisibleOrdered();
     const allRows = reminders.map(toRow);
     const { rows, overflowCount } = truncateToFit(allRows);
     return { rows, overflowCount, isEmpty: allRows.length === 0 };

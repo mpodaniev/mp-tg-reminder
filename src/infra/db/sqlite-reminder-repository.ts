@@ -104,24 +104,6 @@ export class SqliteReminderRepository implements ReminderRepository {
     return rows.map((row) => rowToReminder(row, this.extractSnapshot(row)));
   }
 
-  async findActivePendingOrdered(): Promise<Reminder[]> {
-    // state='pending' ORDER BY scheduled_at uses idx_reminders_state_scheduled_at;
-    // id asc tie-breaks equal fire times by capture order (AC-01).
-    const rows = this.db
-      .prepare(
-        `SELECT r.*, s.id as s_id, s.chat_id, s.message_id, s.chat_username,
-                s.sender_name, s.sender_username, s.message_text, s.media_file_id,
-                s.media_type, s.is_media_protected, s.created_at as s_created_at
-         FROM reminders r
-         JOIN source_snapshots s ON s.id = r.snapshot_id
-         WHERE r.state = 'pending'
-         ORDER BY r.scheduled_at ASC, r.id ASC`
-      )
-      .all() as any[];
-
-    return rows.map((row) => rowToReminder(row, this.extractSnapshot(row)));
-  }
-
   async findVisibleOrdered(): Promise<Reminder[]> {
     // id is the SQLite rowid alias — rows are already physically ordered by
     // id, so ORDER BY id ASC needs no index (ADR-0002, data-model.md Indexes).

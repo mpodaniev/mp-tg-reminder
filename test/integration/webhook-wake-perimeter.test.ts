@@ -124,7 +124,7 @@ describe("Integration: webhook + wake perimeter and catch-up (T14, AC-04/AC-05/A
       expect(stillPending!.state).toBe("pending");
       expect(stack.gateway.sendReminder).not.toHaveBeenCalled();
       const capturedCount =
-        (await stack.repo.findActivePendingOrdered()).length + (await stack.repo.findFiring()).length;
+        (await stack.repo.findVisibleOrdered()).length + (await stack.repo.findFiring()).length;
       expect(capturedCount).toBe(1); // only dueReminder — the hijack attempt created nothing
     } finally {
       await teardownStack(stack);
