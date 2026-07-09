@@ -14,5 +14,7 @@
 | T7 | Integration test: position stable across fire/deliver/snooze; only delete removes | tests | Mykhailo Podaniev | S | T2 | done |
 | T8 | Integration test: oversized visible set sends exactly one message + overflow indicator | tests | Mykhailo Podaniev | S | T3 | done |
 | T9 | Extend owner-gate test: non-Owner sees nothing when fired reminders exist | tests | Mykhailo Podaniev | S | T3 | done |
+| T10 | Review fix: include stuck firing reminders in the visible list | infra | Mykhailo Podaniev | S | — | done |
+| T11 | Review fix: stale done tap on a forged reminderId degrades gracefully | app | Mykhailo Podaniev | S | — | done |
 
-**Total:** 9 tasks, ~4 person-days (fits size S — a small handful of PRs).
+**Total:** 11 tasks, ~4 person-days (fits size S — a small handful of PRs). T10/T11 added post-review (`_review/review-2026-07-09.md`, CHANGES REQUESTED).

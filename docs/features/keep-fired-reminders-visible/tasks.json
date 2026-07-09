@@ -105,6 +105,34 @@
       "files_hint": [
         "src/ports/__tests__/router-auth.test.ts"
       ]
+    },
+    {
+      "id": "T10",
+      "title": "Review fix: include stuck firing reminders in the visible list",
+      "layer": "infra",
+      "deps": [],
+      "acs": ["AC-03", "AC-04"],
+      "dod": "findVisibleOrdered includes pending+firing+fired; a firing reminder maps to the fired status flag and stays at its capture-order position, verified by unit and integration tests",
+      "files_hint": [
+        "src/infra/db/sqlite-reminder-repository.ts",
+        "src/app/use-cases/__tests__/helpers/in-memory-repo.ts",
+        "src/app/use-cases/list-active-reminders.ts",
+        "src/infra/__tests__/sqlite-reminder-repository.test.ts",
+        "src/app/use-cases/__tests__/list-active-reminders.test.ts"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Review fix: stale done tap on a forged reminderId degrades gracefully",
+      "layer": "app",
+      "deps": [],
+      "acs": ["AC-06"],
+      "dod": "ResolveReminder throws ReminderNotFoundError (not a generic Error) on a missing id, and resolve-handler maps it to the uniform not-active toast for the done action, verified by a unit test",
+      "files_hint": [
+        "src/app/use-cases/resolve-reminder.ts",
+        "src/ports/handlers/resolve-handler.ts",
+        "src/ports/__tests__/resolve-handler.test.ts"
+      ]
     }
   ]
 }
