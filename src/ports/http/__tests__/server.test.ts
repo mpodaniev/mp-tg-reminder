@@ -42,6 +42,13 @@ describe("buildHttpServer (ADR-0002, AC-04)", () => {
     expect(webhookHandler).not.toHaveBeenCalled();
   });
 
+  it("returns 200 for GET /health without auth and without invoking any handler", async () => {
+    const res = await fetch(`${baseUrl}/health`, { method: "GET" });
+    expect(res.status).toBe(200);
+    expect(webhookHandler).not.toHaveBeenCalled();
+    expect(wakeHandler).not.toHaveBeenCalled();
+  });
+
   it("returns 404 for an unknown path with no handler invoked", async () => {
     const res = await fetch(`${baseUrl}/unknown`, { method: "POST" });
     expect(res.status).toBe(404);
