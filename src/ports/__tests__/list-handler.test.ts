@@ -102,6 +102,21 @@ describe("handleList — /list command handler (T6)", () => {
     expect(text).toMatch(/ще\s+10/);
   });
 
+  it("hits the 4096-char budget before the row cap and still sends exactly one message with an overflow indicator (AC-08)", async () => {
+    // long previews (~100 chars each) blow the char budget well before MAX_ACTIVE_LIST_ROWS
+    for (let i = 1; i <= 50; i++) {
+      repo.reminders.set(i, pending(i, 1_000_000 + i, "y".repeat(100)));
+    }
+    const ctx = makeCtx(OWNER_ID);
+    await handleList(ctx as any, repo, listUC);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const [text] = ctx.reply.mock.calls[0]!;
+    expect(text).toMatch(/ще\s+\d+/);
+    // earliest-added (lowest id) rows are the ones kept
+    expect(text).toContain("y".repeat(100).slice(0, 20));
+  });
+
   it("reveals nothing to a non-Owner (AC-05)", async () => {
     repo.reminders.set(1, pending(1, 1000, "secret"));
     const ctx = makeCtx(NON_OWNER_ID);
