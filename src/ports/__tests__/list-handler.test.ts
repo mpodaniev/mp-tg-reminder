@@ -144,9 +144,14 @@ describe("handleList — /list command handler (T6)", () => {
     const keyboard = opts.reply_markup.inline_keyboard.flat();
     expect(keyboard.some((b: any) => b.callback_data === "cancel:1")).toBe(true);
     expect(keyboard.some((b: any) => b.callback_data === "cancel:2")).toBe(false);
-    // Delete stays out of scope for the list itself (spec §3 Non-goal) — only
-    // Source remains on fired rows alongside the omitted Cancel.
     expect(keyboard.some((b: any) => b.callback_data === "source:2")).toBe(true);
+    // A fired row has no Cancel, but it must offer Delete directly from the
+    // list — the Owner shouldn't have to hunt down the original fired
+    // message in chat just to clear it (AC-09, added-by-fix).
+    expect(keyboard.some((b: any) => b.callback_data === "delete:2")).toBe(true);
+    // A still-scheduled row has no Delete — it isn't resolved yet, Cancel is
+    // its only exit.
+    expect(keyboard.some((b: any) => b.callback_data === "delete:1")).toBe(false);
   });
 
   it("emits a structured timing log around the list use-case (NFR §6 / QG-3)", async () => {

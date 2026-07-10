@@ -2,7 +2,7 @@
 status: Draft
 owner: "Mykhailo Podaniev"
 reviewers: ["Tech Lead", "Security Lead"]
-updated_at: "2026-07-08"
+updated_at: "2026-07-10"
 feature_size: "S"
 ---
 
@@ -24,6 +24,7 @@ feature_size: "S"
 - **Decision override: list ordered by fire time — rationale:** `list-active-reminders` AC-01 ordered the list soonest-fire-time-first. Since fired items now stay listed indefinitely, sorting by fire time would bury newly captured reminders under old fired ones. The Owner asked instead for a stable position fixed at capture time, so reminders never reorder as they move through pending → fired.
 - **Decision override: overflow truncation picks soonest-firing — rationale:** a mechanical consequence of the ordering override above — `list-active-reminders` AC-08's truncation rule ("keep the soonest-firing that fit") is restated against the new capture-order sort ("keep the earliest-added that fit").
 - **Decision override: Done as a second resolving action — rationale:** `telegram-reminder` US-06/AC-06/AC-07 gave a fired reminder both a Done and a Delete action. The Owner finds Done's distinction from Delete unclear in practice and asked for it to be removed; Delete (and Snooze, which reschedules rather than resolves) remain.
+- **Decision override: no delete action on the list itself — rationale:** this feature originally kept deletion confined to the fired-reminder message in chat (§3 non-goal, below). Real usage (`_fixes/2026-07-10-fired-row-no-delete-in-list.md`) showed the Owner needs to clear a fired entry straight from the list without hunting down that original message, so the list now also offers Delete on fired rows — see AC-09.
 
 ## 2. Goals
 
@@ -33,7 +34,7 @@ feature_size: "S"
 
 ## 3. Non-goals
 
-- **Adding a delete action to the list itself** — deletion continues to happen from the fired-reminder message in the chat, unchanged; the list stays a read view for fired entries.
+- ~~Adding a delete action to the list itself~~ — **superseded by AC-09** (`_fixes/2026-07-10-fired-row-no-delete-in-list.md`): the list now also offers Delete on fired rows, reusing the same resolve path as the fired-message button, instead of requiring the Owner to locate that message in chat.
 - **Capping or archiving the list** — no limit is added beyond the existing anti-flood truncation; an Owner who never deletes fired reminders will simply see them accumulate, accepted as a non-issue today.
 - **Rescheduling from the list** — still deferred, unchanged from `list-active-reminders` §3.
 - **Multi-user / shared lists** — the bot remains single-Owner, unchanged from prior specs.
@@ -120,6 +121,12 @@ feature_size: "S"
 **When** the Owner requests the list
 **Then** the bot still replies with exactly one message, showing the earliest-added reminders that fit and appending an overflow indicator for the rest, rather than sending additional messages
 
+### AC-09 (US-04) — happy path <!-- added-by-fix: 2026-07-10 -->
+
+**Given** an authorized Owner is viewing the list where an entry has already fired but not been deleted
+**When** the Owner taps that entry's Delete action from the list, instead of the fired-reminder message in chat
+**Then** the reminder is deleted the same way it would be from that message's Delete button — the Owner is never required to locate the original fired message just to clear the list
+
 ## 6. Non-functional requirements
 
 | Aspect | Target | Measurement |
@@ -168,6 +175,7 @@ feature_size: "S"
 | AC-06 | Stale Done tap after rollout → graceful message, no crash, no state change | `stale done callback is rejected without crashing or changing state` | integration | drive a `done` callback against a fired reminder, assert a graceful reply, unchanged persisted state |
 | AC-07 | Non-Owner sees no reminders, scheduled or fired | `non-owner is rejected on the list command regardless of reminder mix` | unit | **dedicated authorization row.** extends the existing owner-gate test with a fired reminder present |
 | AC-08 | Oversized visible set → exactly 1 message, earliest-added that fit + overflow indicator | `truncation keeps earliest-added within the message budget and counts overflow` (unit) + `oversized visible set sends exactly one message with overflow indicator` (integration) | unit + integration | **dedicated anti-flood-invariant row**, restated against capture-order sort |
+| AC-09 | Fired entries expose a Delete action directly in the list | `marks fired rows with a distinct flag and omits Cancel; scheduled rows keep Cancel (AC-02/AC-05)` | unit | `<!-- added-by-fix: 2026-07-10 -->`; asserts `delete:<id>` on fired rows, absent on scheduled rows |
 
 Every §5 criterion maps to ≥1 test; AC-04 (invariant), AC-05 (cross-context), and AC-07 (authorization) each have a dedicated row, not folded into a happy path.
 

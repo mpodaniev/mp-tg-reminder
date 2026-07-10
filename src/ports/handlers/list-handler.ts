@@ -50,12 +50,20 @@ function renderListMessage(
       `${n}. ${row.preview} — ${formatFireTime(row.fireTimeMs, timezone)} (${statusFlag})`
     );
     // Cancel only makes sense on a still-scheduled reminder — a fired one has
-    // nothing left to cancel (AC-05).
+    // nothing left to cancel (AC-05). A fired reminder instead offers Delete
+    // directly from the list, reusing the same resolve path as the
+    // fired-message button, so the Owner never has to go hunt that message
+    // down in chat just to clear the list (AC-09, added-by-fix).
     const rowButtons: any[] = [];
     if (row.status === "scheduled") {
       rowButtons.push({
         text: `🗑 Скасувати #${n}`,
         callback_data: `${LIST_CALLBACK.CANCEL}:${row.reminderId}`,
+      });
+    } else {
+      rowButtons.push({
+        text: `🗑 Видалити #${n}`,
+        callback_data: `${LIST_CALLBACK.DELETE}:${row.reminderId}`,
       });
     }
     rowButtons.push({
