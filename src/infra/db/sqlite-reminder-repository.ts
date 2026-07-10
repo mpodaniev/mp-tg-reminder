@@ -44,8 +44,8 @@ export class SqliteReminderRepository implements ReminderRepository {
       const reminderResult = this.db
         .prepare(
           `INSERT INTO reminders
-           (snapshot_id, state, scheduled_at, fired_at, delivered_at, fired_message_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
+           (snapshot_id, state, scheduled_at, fired_at, delivered_at, fired_message_id, created_at, resolved_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           snapshotId,
@@ -54,7 +54,8 @@ export class SqliteReminderRepository implements ReminderRepository {
           reminder.firedAt,
           reminder.deliveredAt,
           reminder.firedMessageId,
-          reminder.createdAt
+          reminder.createdAt,
+          reminder.resolvedAt
         );
 
       const reminderId = reminderResult.lastInsertRowid as number;
@@ -156,7 +157,7 @@ export class SqliteReminderRepository implements ReminderRepository {
     this.db
       .prepare(
         `UPDATE reminders
-         SET state = ?, scheduled_at = ?, fired_at = ?, delivered_at = ?, fired_message_id = ?
+         SET state = ?, scheduled_at = ?, fired_at = ?, delivered_at = ?, fired_message_id = ?, resolved_at = ?
          WHERE id = ?`
       )
       .run(
@@ -165,6 +166,7 @@ export class SqliteReminderRepository implements ReminderRepository {
         reminder.firedAt,
         reminder.deliveredAt,
         reminder.firedMessageId,
+        reminder.resolvedAt,
         reminder.id
       );
   }

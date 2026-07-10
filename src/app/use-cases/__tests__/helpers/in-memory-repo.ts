@@ -26,6 +26,7 @@ export class InMemoryReminderRepository implements ReminderRepository {
       deliveredAt: reminder.deliveredAt,
       firedMessageId: reminder.firedMessageId,
       createdAt: reminder.createdAt,
+      resolvedAt: reminder.resolvedAt,
     });
     this.reminders.set(id, saved);
     return saved;

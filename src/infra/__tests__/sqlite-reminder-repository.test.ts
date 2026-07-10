@@ -126,6 +126,34 @@ describe("SqliteReminderRepository", () => {
     expect(updated!.state).toBe("firing");
   });
 
+  it("update persists resolvedAt", async () => {
+    const snapshotData = {
+      chatId: 104,
+      messageId: 204,
+      chatUsername: null,
+      senderName: null,
+      senderUsername: null,
+      messageText: "resolve me",
+      mediaFileId: null,
+      mediaType: null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
+    const saved = await repo.saveWithSnapshot(snapshotData, r);
+
+    db.prepare("UPDATE reminders SET state='fired', fired_at=? WHERE id=?")
+      .run(Date.now() - 1000, saved.id);
+
+    const reloaded = await repo.findById(saved.id!);
+    reloaded!.resolveDelete();
+    await repo.update(reloaded!);
+
+    const updated = await repo.findById(saved.id!);
+    expect(updated!.state).toBe("deleted");
+    expect(updated!.resolvedAt).not.toBeNull();
+  });
+
   it("getOwnerSettings returns the seeded row", async () => {
     const settings = await repo.getOwnerSettings();
     expect(settings).not.toBeNull();
