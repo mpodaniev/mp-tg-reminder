@@ -12,6 +12,8 @@ import { handleSource } from "./handlers/source-handler.js";
 import { handleList, handleListCancel } from "./handlers/list-handler.js";
 import { ListActiveReminders } from "../app/use-cases/list-active-reminders.js";
 import { CancelPendingReminder } from "../app/use-cases/cancel-pending-reminder.js";
+import { GetStats } from "../app/use-cases/get-stats.js";
+import { handleStats } from "./handlers/stats-handler.js";
 import { localTodayAt } from "./tz-utils.js";
 import { AlreadyResolvedError, InvalidStateTransitionError, ReminderNotFoundError } from "../domain/errors.js";
 import { isOwner } from "./middleware/auth-middleware.js";
@@ -44,6 +46,7 @@ export function buildRouter(
   const resolveUC = new ResolveReminder(repo);
   const listUC = new ListActiveReminders(repo);
   const cancelUC = new CancelPendingReminder(repo);
+  const statsUC = new GetStats(repo);
 
   return {
     async handleUpdate(ctx: any) {
@@ -63,6 +66,10 @@ export function buildRouter(
 
       if (msg?.text?.startsWith("/list")) {
         return handleList(ctx, repo, listUC);
+      }
+
+      if (msg?.text?.startsWith("/stats")) {
+        return handleStats(ctx, statsUC);
       }
 
       if (msg?.forward_origin || msg?.forward_date || msg?.forward_from || msg?.forward_from_chat) {

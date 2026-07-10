@@ -77,7 +77,10 @@ const router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo, WAKE
 // chat so it is never offered to other users (owner-only posture, AC-05/AC-07).
 try {
   await bot.api.setMyCommands(
-    [{ command: "list", description: "Активні нагадування" }],
+    [
+      { command: "list", description: "Активні нагадування" },
+      { command: "stats", description: "Статистика нагадувань" },
+    ],
     { scope: { type: "chat", chat_id: OWNER_CHAT_ID } }
   );
 } catch (err) {
