@@ -1,5 +1,9 @@
 import Database from "better-sqlite3";
-import type { ReminderRepository, OwnerSettingsRow } from "../../app/ports/reminder-repository.js";
+import type {
+  ReminderRepository,
+  OwnerSettingsRow,
+  ReminderStats,
+} from "../../app/ports/reminder-repository.js";
 import { Reminder } from "../../domain/reminder.js";
 import type { SourceSnapshot } from "../../domain/value-objects/source-snapshot.js";
 import {
@@ -44,8 +48,8 @@ export class SqliteReminderRepository implements ReminderRepository {
       const reminderResult = this.db
         .prepare(
           `INSERT INTO reminders
-           (snapshot_id, state, scheduled_at, fired_at, delivered_at, fired_message_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
+           (snapshot_id, state, scheduled_at, fired_at, delivered_at, fired_message_id, created_at, resolved_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           snapshotId,
@@ -54,7 +58,8 @@ export class SqliteReminderRepository implements ReminderRepository {
           reminder.firedAt,
           reminder.deliveredAt,
           reminder.firedMessageId,
-          reminder.createdAt
+          reminder.createdAt,
+          reminder.resolvedAt
         );
 
       const reminderId = reminderResult.lastInsertRowid as number;
@@ -156,7 +161,7 @@ export class SqliteReminderRepository implements ReminderRepository {
     this.db
       .prepare(
         `UPDATE reminders
-         SET state = ?, scheduled_at = ?, fired_at = ?, delivered_at = ?, fired_message_id = ?
+         SET state = ?, scheduled_at = ?, fired_at = ?, delivered_at = ?, fired_message_id = ?, resolved_at = ?
          WHERE id = ?`
       )
       .run(
@@ -165,6 +170,7 @@ export class SqliteReminderRepository implements ReminderRepository {
         reminder.firedAt,
         reminder.deliveredAt,
         reminder.firedMessageId,
+        reminder.resolvedAt,
         reminder.id
       );
   }
@@ -187,6 +193,63 @@ export class SqliteReminderRepository implements ReminderRepository {
                                        timezone = excluded.timezone`
       )
       .run(ownerTelegramId, timezone, now);
+  }
+
+  async getStats(): Promise<ReminderStats> {
+    const counts = this.db
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN state='awaiting_time' THEN 1 ELSE 0 END) AS awaitingTime,
+           SUM(CASE WHEN state='pending' THEN 1 ELSE 0 END) AS pending,
+           SUM(CASE WHEN state='firing' THEN 1 ELSE 0 END) AS firing,
+           SUM(CASE WHEN state='fired' THEN 1 ELSE 0 END) AS fired,
+           SUM(CASE WHEN state='deleted' AND fired_at IS NOT NULL THEN 1 ELSE 0 END) AS closedAfterFiring,
+           SUM(CASE WHEN state='deleted' AND fired_at IS NULL THEN 1 ELSE 0 END) AS cancelledBeforeFiring,
+           SUM(CASE WHEN state='expired' THEN 1 ELSE 0 END) AS expired
+         FROM reminders`
+      )
+      .get() as Record<
+      "awaitingTime" | "pending" | "firing" | "fired" | "closedAfterFiring" | "cancelledBeforeFiring" | "expired",
+      number | null
+    >;
+
+    const avgRow = this.db
+      .prepare(
+        `SELECT AVG(resolved_at - fired_at) AS avgMs
+         FROM reminders
+         WHERE fired_at IS NOT NULL AND resolved_at IS NOT NULL`
+      )
+      .get() as { avgMs: number | null };
+
+    const now = Date.now();
+    const longestRows = this.db
+      .prepare(
+        `SELECT r.id AS reminderId, r.created_at AS createdAt, s.message_text AS messageText
+         FROM reminders r
+         JOIN source_snapshots s ON s.id = r.snapshot_id
+         WHERE r.state NOT IN ('deleted', 'expired')
+         ORDER BY r.created_at ASC
+         LIMIT 5`
+      )
+      .all() as { reminderId: number; createdAt: number; messageText: string | null }[];
+
+    return {
+      statusCounts: {
+        awaitingTime: counts.awaitingTime ?? 0,
+        pending: counts.pending ?? 0,
+        firing: counts.firing ?? 0,
+        fired: counts.fired ?? 0,
+        closedAfterFiring: counts.closedAfterFiring ?? 0,
+        cancelledBeforeFiring: counts.cancelledBeforeFiring ?? 0,
+        expired: counts.expired ?? 0,
+      },
+      avgReactionTimeMs: avgRow.avgMs ?? null,
+      longestActive: longestRows.map((row) => ({
+        reminderId: row.reminderId,
+        messageText: row.messageText,
+        ageMs: now - row.createdAt,
+      })),
+    };
   }
 
   private extractSnapshot(row: any): SourceSnapshot {

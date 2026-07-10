@@ -1,4 +1,9 @@
-import type { ReminderRepository, OwnerSettingsRow } from "../../../ports/index.js";
+import type {
+  ReminderRepository,
+  OwnerSettingsRow,
+  ReminderStats,
+  ReminderStatusCounts,
+} from "../../../ports/index.js";
 import { Reminder } from "../../../../domain/reminder.js";
 import type { SourceSnapshot } from "../../../../domain/value-objects/source-snapshot.js";
 
@@ -26,6 +31,7 @@ export class InMemoryReminderRepository implements ReminderRepository {
       deliveredAt: reminder.deliveredAt,
       firedMessageId: reminder.firedMessageId,
       createdAt: reminder.createdAt,
+      resolvedAt: reminder.resolvedAt,
     });
     this.reminders.set(id, saved);
     return saved;
@@ -76,5 +82,49 @@ export class InMemoryReminderRepository implements ReminderRepository {
 
   async upsertOwnerSettings(ownerTelegramId: number, timezone: string): Promise<void> {
     // in-memory — no-op for tests that just need the call to succeed
+  }
+
+  async getStats(): Promise<ReminderStats> {
+    const all = [...this.reminders.values()];
+    const statusCounts: ReminderStatusCounts = {
+      awaitingTime: 0,
+      pending: 0,
+      firing: 0,
+      fired: 0,
+      closedAfterFiring: 0,
+      cancelledBeforeFiring: 0,
+      expired: 0,
+    };
+    for (const r of all) {
+      if (r.state === "awaiting_time") statusCounts.awaitingTime++;
+      else if (r.state === "pending") statusCounts.pending++;
+      else if (r.state === "firing") statusCounts.firing++;
+      else if (r.state === "fired") statusCounts.fired++;
+      else if (r.state === "deleted") {
+        if (r.firedAt !== null) statusCounts.closedAfterFiring++;
+        else statusCounts.cancelledBeforeFiring++;
+      } else if (r.state === "expired") statusCounts.expired++;
+    }
+
+    const resolvedDurations = all
+      .filter((r) => r.firedAt !== null && r.resolvedAt !== null)
+      .map((r) => r.resolvedAt! - r.firedAt!);
+    const avgReactionTimeMs =
+      resolvedDurations.length === 0
+        ? null
+        : resolvedDurations.reduce((sum, ms) => sum + ms, 0) / resolvedDurations.length;
+
+    const now = Date.now();
+    const longestActive = all
+      .filter((r) => r.state !== "deleted" && r.state !== "expired")
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(0, 5)
+      .map((r) => ({
+        reminderId: r.id!,
+        messageText: r.snapshot.messageText,
+        ageMs: now - r.createdAt,
+      }));
+
+    return { statusCounts, avgReactionTimeMs, longestActive };
   }
 }

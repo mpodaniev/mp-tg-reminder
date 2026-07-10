@@ -126,6 +126,34 @@ describe("SqliteReminderRepository", () => {
     expect(updated!.state).toBe("firing");
   });
 
+  it("update persists resolvedAt", async () => {
+    const snapshotData = {
+      chatId: 104,
+      messageId: 204,
+      chatUsername: null,
+      senderName: null,
+      senderUsername: null,
+      messageText: "resolve me",
+      mediaFileId: null,
+      mediaType: null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.create({ snapshot: { ...snapshotData, id: 0 } });
+    const saved = await repo.saveWithSnapshot(snapshotData, r);
+
+    db.prepare("UPDATE reminders SET state='fired', fired_at=? WHERE id=?")
+      .run(Date.now() - 1000, saved.id);
+
+    const reloaded = await repo.findById(saved.id!);
+    reloaded!.resolveDelete();
+    await repo.update(reloaded!);
+
+    const updated = await repo.findById(saved.id!);
+    expect(updated!.state).toBe("deleted");
+    expect(updated!.resolvedAt).not.toBeNull();
+  });
+
   it("getOwnerSettings returns the seeded row", async () => {
     const settings = await repo.getOwnerSettings();
     expect(settings).not.toBeNull();
@@ -204,5 +232,105 @@ describe("SqliteReminderRepository.findVisibleOrdered (T1, AC-01/AC-08)", () => 
   it("returns an empty array when there are no visible reminders", async () => {
     seedReminder("deleted", 1000);
     expect(await memRepo.findVisibleOrdered()).toEqual([]);
+  });
+});
+
+describe("SqliteReminderRepository.getStats", () => {
+  let memDb: Database.Database;
+  let memRepo: SqliteReminderRepository;
+
+  function seed(opts: {
+    state: string;
+    createdAt: number;
+    firedAt?: number | null;
+    resolvedAt?: number | null;
+    messageText?: string | null;
+  }): number {
+    const snapId = memDb
+      .prepare(
+        `INSERT INTO source_snapshots
+         (chat_id, message_id, chat_username, sender_name, sender_username,
+          message_text, media_file_id, media_type, is_media_protected, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(100, 200, null, null, null, opts.messageText ?? "text", null, null, 0, opts.createdAt)
+      .lastInsertRowid as number;
+    return memDb
+      .prepare(
+        `INSERT INTO reminders (snapshot_id, state, scheduled_at, fired_at, delivered_at, fired_message_id, created_at, resolved_at)
+         VALUES (?, ?, NULL, ?, NULL, NULL, ?, ?)`
+      )
+      .run(snapId, opts.state, opts.firedAt ?? null, opts.createdAt, opts.resolvedAt ?? null)
+      .lastInsertRowid as number;
+  }
+
+  beforeEach(() => {
+    memDb = new Database(":memory:");
+    memDb.pragma("foreign_keys = ON");
+    runMigrationsUp(memDb);
+    memRepo = new SqliteReminderRepository(memDb);
+  });
+
+  afterEach(() => memDb.close());
+
+  it("returns all-zero counts, null average, and an empty list on an empty database", async () => {
+    const stats = await memRepo.getStats();
+    expect(stats.statusCounts).toEqual({
+      awaitingTime: 0,
+      pending: 0,
+      firing: 0,
+      fired: 0,
+      closedAfterFiring: 0,
+      cancelledBeforeFiring: 0,
+      expired: 0,
+    });
+    expect(stats.avgReactionTimeMs).toBeNull();
+    expect(stats.longestActive).toEqual([]);
+  });
+
+  it("counts each status, splitting deleted by whether fired_at is set", async () => {
+    seed({ state: "awaiting_time", createdAt: 1000 });
+    seed({ state: "pending", createdAt: 1000 });
+    seed({ state: "firing", createdAt: 1000 });
+    seed({ state: "fired", createdAt: 1000, firedAt: 1000 });
+    seed({ state: "deleted", createdAt: 1000, firedAt: 1000, resolvedAt: 2000 });
+    seed({ state: "deleted", createdAt: 1000 });
+    seed({ state: "expired", createdAt: 1000 });
+
+    const stats = await memRepo.getStats();
+
+    expect(stats.statusCounts).toEqual({
+      awaitingTime: 1,
+      pending: 1,
+      firing: 1,
+      fired: 1,
+      closedAfterFiring: 1,
+      cancelledBeforeFiring: 1,
+      expired: 1,
+    });
+  });
+
+  it("averages reaction time only across rows with both fired_at and resolved_at", async () => {
+    seed({ state: "deleted", createdAt: 1000, firedAt: 1000, resolvedAt: 3000 }); // 2000ms
+    seed({ state: "deleted", createdAt: 1000, firedAt: 1000, resolvedAt: 5000 }); // 4000ms
+    seed({ state: "deleted", createdAt: 1000 }); // excluded — no fired_at/resolved_at
+
+    const stats = await memRepo.getStats();
+
+    expect(stats.avgReactionTimeMs).toBe(3000);
+  });
+
+  it("returns the 5 oldest active reminders by created_at, excluding deleted/expired", async () => {
+    for (let i = 1; i <= 6; i++) {
+      seed({ state: "pending", createdAt: i * 1000, messageText: `r${i}` });
+    }
+    seed({ state: "deleted", createdAt: 1, messageText: "should not appear" });
+    seed({ state: "expired", createdAt: 1, messageText: "should not appear either" });
+
+    const stats = await memRepo.getStats();
+
+    expect(stats.longestActive).toHaveLength(5);
+    expect(stats.longestActive.map((x) => x.messageText)).toEqual(["r1", "r2", "r3", "r4", "r5"]);
+    expect(stats.longestActive[0]!.ageMs).toBeGreaterThanOrEqual(0);
   });
 });

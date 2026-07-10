@@ -19,7 +19,7 @@ afterAll(() => {
 });
 
 describe("migration runner", () => {
-  it("applies all 4 up-migrations cleanly", () => {
+  it("applies all 5 up-migrations cleanly", () => {
     runMigrationsUp(db);
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
@@ -41,7 +41,7 @@ describe("migration runner", () => {
     expect(() => runMigrationsUp(db)).not.toThrow();
   });
 
-  it("rolls back all 3 down-migrations cleanly", () => {
+  it("rolls back all 5 down-migrations cleanly", () => {
     runMigrationsDown(db);
     const tables = db
       .prepare(
@@ -58,5 +58,12 @@ describe("migration runner", () => {
       .all() as { name: string }[];
     const names = tables.map((t) => t.name);
     expect(names).toContain("reminders");
+  });
+
+  it("resolved_at column exists on reminders after migrations are applied", () => {
+    const cols = (
+      db.prepare("PRAGMA table_info(reminders)").all() as { name: string }[]
+    ).map((c) => c.name);
+    expect(cols).toContain("resolved_at");
   });
 });

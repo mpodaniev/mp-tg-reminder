@@ -11,6 +11,7 @@ export interface ReminderProps {
   deliveredAt?: number | null;
   firedMessageId?: number | null;
   createdAt?: number;
+  resolvedAt?: number | null;
 }
 
 export class Reminder {
@@ -21,6 +22,7 @@ export class Reminder {
   private _firedAt: number | null;
   private _deliveredAt: number | null;
   private _firedMessageId: number | null;
+  private _resolvedAt: number | null;
   readonly createdAt: number;
 
   private constructor(props: ReminderProps) {
@@ -31,6 +33,7 @@ export class Reminder {
     this._firedAt = props.firedAt ?? null;
     this._deliveredAt = props.deliveredAt ?? null;
     this._firedMessageId = props.firedMessageId ?? null;
+    this._resolvedAt = props.resolvedAt ?? null;
     this.createdAt = props.createdAt ?? Date.now();
   }
 
@@ -60,6 +63,10 @@ export class Reminder {
 
   get firedMessageId(): number | null {
     return this._firedMessageId;
+  }
+
+  get resolvedAt(): number | null {
+    return this._resolvedAt;
   }
 
   schedule(time: ScheduledTime): void {
@@ -92,14 +99,17 @@ export class Reminder {
 
   resolveDone(): void {
     this._state = transition(this._state, "resolve_done");
+    this._resolvedAt = Date.now();
   }
 
   resolveDelete(): void {
     this._state = transition(this._state, "resolve_delete");
+    this._resolvedAt = Date.now();
   }
 
   cancel(): void {
     this._state = transition(this._state, "cancel");
+    this._resolvedAt = Date.now();
   }
 
   isResolved(): boolean {

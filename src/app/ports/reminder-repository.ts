@@ -8,6 +8,28 @@ export interface OwnerSettingsRow {
   createdAt: number;
 }
 
+export interface ReminderStatusCounts {
+  awaitingTime: number;
+  pending: number;
+  firing: number;
+  fired: number;
+  closedAfterFiring: number;
+  cancelledBeforeFiring: number;
+  expired: number;
+}
+
+export interface LongestActiveEntry {
+  reminderId: number;
+  messageText: string | null;
+  ageMs: number;
+}
+
+export interface ReminderStats {
+  statusCounts: ReminderStatusCounts;
+  avgReactionTimeMs: number | null;
+  longestActive: LongestActiveEntry[];
+}
+
 export interface ReminderRepository {
   saveWithSnapshot(
     snapshot: Omit<SourceSnapshot, "id">,
@@ -37,4 +59,10 @@ export interface ReminderRepository {
     ownerTelegramId: number,
     timezone: string | null
   ): Promise<void>;
+
+  /**
+   * Aggregate view backing /stats: status counts, average fired→resolved
+   * reaction time, and the 5 oldest still-active reminders.
+   */
+  getStats(): Promise<ReminderStats>;
 }

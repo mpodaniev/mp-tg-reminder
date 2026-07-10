@@ -12,6 +12,7 @@ export interface ReminderDbRow {
   delivered_at: number | null;
   fired_message_id: number | null;
   created_at: number;
+  resolved_at: number | null;
 }
 
 export interface SourceSnapshotDbRow {
@@ -64,6 +65,7 @@ export function rowToReminder(
     deliveredAt: row.delivered_at,
     firedMessageId: row.fired_message_id,
     createdAt: row.created_at,
+    resolvedAt: row.resolved_at,
   });
 }
 

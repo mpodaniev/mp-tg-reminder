@@ -62,6 +62,44 @@ describe("Reminder entity", () => {
     }
   );
 
+  it("resolveDelete sets resolvedAt (fired → deleted)", () => {
+    const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "fired" });
+    expect(r.resolvedAt).toBeNull();
+    r.resolveDelete();
+    expect(r.state).toBe("deleted");
+    expect(r.resolvedAt).not.toBeNull();
+  });
+
+  it("resolveDone sets resolvedAt (fired → done)", () => {
+    const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "fired" });
+    r.resolveDone();
+    expect(r.state).toBe("done");
+    expect(r.resolvedAt).not.toBeNull();
+  });
+
+  it("cancel sets resolvedAt (pending → deleted)", () => {
+    const r = Reminder.create({ snapshot: makeSnapshot() });
+    r.schedule(ScheduledTime.from(Date.now() + 60_000));
+    expect(r.resolvedAt).toBeNull();
+    r.cancel();
+    expect(r.resolvedAt).not.toBeNull();
+  });
+
+  it("expire does not set resolvedAt — system-driven, not an Owner action", () => {
+    const r = Reminder.create({ snapshot: makeSnapshot() });
+    r.expire();
+    expect(r.resolvedAt).toBeNull();
+  });
+
+  it("snooze does not set resolvedAt — returns to pending, not a resolution", () => {
+    const r = Reminder.create({ snapshot: makeSnapshot() });
+    r.schedule(ScheduledTime.from(Date.now() + 60_000));
+    r.startFiring();
+    r.markFired(42);
+    r.snooze(ScheduledTime.from(Date.now() + 120_000));
+    expect(r.resolvedAt).toBeNull();
+  });
+
   it("has no imports from infra (domain purity check via module resolution)", () => {
     // This test is structural: if the import above fails, the test suite fails.
     // No infra symbols are imported in this file.
