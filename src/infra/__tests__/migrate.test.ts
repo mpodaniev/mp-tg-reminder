@@ -41,7 +41,7 @@ describe("migration runner", () => {
     expect(() => runMigrationsUp(db)).not.toThrow();
   });
 
-  it("rolls back all 3 down-migrations cleanly", () => {
+  it("rolls back all 5 down-migrations cleanly", () => {
     runMigrationsDown(db);
     const tables = db
       .prepare(

@@ -73,8 +73,9 @@ const expireUC = new ExpireStalePrompts(repo);
 const scheduler = new Scheduler(fireUC, expireUC, 24 * 60 * 60 * 1000);
 const router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo, WAKE_INTERVAL_MS);
 
-// Register the /list command in the Telegram command menu, scoped to the Owner's
-// chat so it is never offered to other users (owner-only posture, AC-05/AC-07).
+// Register the /list and /stats commands in the Telegram command menu, scoped
+// to the Owner's chat so they are never offered to other users (owner-only
+// posture, AC-05/AC-07).
 try {
   await bot.api.setMyCommands(
     [
