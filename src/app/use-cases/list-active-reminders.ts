@@ -28,7 +28,7 @@ export interface ActiveListViewModel {
   isEmpty: boolean;
 }
 
-function buildPreview(text: string | null): string {
+export function buildPreview(text: string | null): string {
   const firstLine = (text ?? "[медіа]").split("\n")[0] ?? "";
   if (firstLine.length <= PREVIEW_MAX_CHARS) return firstLine;
   return firstLine.slice(0, PREVIEW_MAX_CHARS - 1) + "…";
