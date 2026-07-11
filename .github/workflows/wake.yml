@@ -1,15 +1,22 @@
-name: Wake scheduler
+name: Wake scheduler (backup)
 
 # Pings POST /wake so the bot fires due reminders and expires stale prompts.
-# The app has no in-process timer (webhook-cron-wake ADR-0001), so this
+# The app has no in-process timer (webhook-cron-wake ADR-0001), so an
 # external cadence is what actually drives time-based delivery.
-# GitHub Actions' minimum schedule granularity is 5 minutes and runs may drift
-# under load — keep the app's WAKE_INTERVAL_MS in sync with this interval so the
-# owner-facing "delivery may be late" estimate stays honest (README §env vars).
+#
+# GitHub Actions' `schedule` trigger is NOT the primary scheduler: GitHub
+# explicitly documents that scheduled workflow runs can be delayed or
+# dropped under load, and low-activity/private repos are throttled hardest —
+# in practice this repo saw gaps of 1-3+ hours instead of the configured
+# 5 minutes. The primary trigger is an external cron service (e.g.
+# cron-job.org) calling /wake every 3 minutes, matching WAKE_INTERVAL_MS
+# (see docs/features/webhook-cron-wake/README.md). This workflow is kept
+# only as a low-frequency safety net in case that external service has an
+# outage — duplicate /wake calls are harmless (single-flight tick, AC-06).
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch: {}
 
 jobs:

@@ -48,6 +48,15 @@ POST https://<fly-app>.fly.dev/wake
 Authorization: Bearer <WAKE_BEARER_TOKEN>
 ```
 
+**Do not rely on GitHub Actions' `schedule` trigger as the primary
+scheduler** — GitHub explicitly documents that scheduled workflow runs can
+be delayed or dropped under load, and low-activity/private repos are
+throttled hardest (observed in practice: gaps of 1-3+ hours instead of the
+configured 5 minutes). Use a dedicated cron service instead (e.g.
+cron-job.org, free, ~1 minute accuracy). `.github/workflows/wake.yml` is
+kept only as a low-frequency backup (hourly) in case the primary service
+has an outage — duplicate `/wake` calls are harmless (AC-06).
+
 **Cadence: every 3 minutes** — the wake interval chosen in `sad.md` §8, which
 leaves headroom under the ≤5 min p95 delivery-delay target once the ~15s p95
 cold-start latency is added (spec.md §6). Each call invokes `Scheduler.tick()`
