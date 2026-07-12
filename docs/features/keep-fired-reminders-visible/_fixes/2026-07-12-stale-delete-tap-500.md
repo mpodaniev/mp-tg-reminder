@@ -3,7 +3,7 @@ slug: keep-fired-reminders-visible
 date: 2026-07-12
 triage: gap
 acs: [AC-10]
-commit: <filled after commit>
+commit: 4a88900
 recurrence_of: none
 ---
 
