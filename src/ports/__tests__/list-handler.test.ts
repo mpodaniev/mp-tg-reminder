@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handleList, handleListCancel } from "../handlers/list-handler.js";
+import { handleList, handleListCancel, refreshListMessage } from "../handlers/list-handler.js";
 import { handleSource } from "../handlers/source-handler.js";
 import { ListActiveReminders } from "../../app/use-cases/list-active-reminders.js";
 import { CancelPendingReminder } from "../../app/use-cases/cancel-pending-reminder.js";
@@ -256,6 +256,51 @@ describe("handleListCancel — cancel callback (T7, AC-03/AC-04)", () => {
       messages.push(ctx.reply.mock.calls[0]![0]);
     }
     expect(new Set(messages).size).toBe(1);
+  });
+});
+
+describe("refreshListMessage — in-place /list edit (issue #8)", () => {
+  let repo: InMemoryReminderRepository;
+  let listUC: ListActiveReminders;
+
+  beforeEach(() => {
+    repo = new InMemoryReminderRepository(OWNER_ID, TZ);
+    listUC = new ListActiveReminders(repo);
+  });
+
+  it("edits the message with the freshly rendered list", async () => {
+    repo.reminders.set(1, pending(1, Date.UTC(2026, 5, 20, 11, 30), "still here"));
+    const gateway = makeGateway();
+
+    await refreshListMessage(gateway, listUC, repo, 777, 42);
+
+    expect(gateway.editListMessage).toHaveBeenCalledTimes(1);
+    const [chatId, messageId, text, keyboard] = (gateway.editListMessage as any).mock.calls[0];
+    expect(chatId).toBe(777);
+    expect(messageId).toBe(42);
+    expect(text).toContain("still here");
+    expect(keyboard.flat().some((b: any) => b.callback_data === "cancel:1")).toBe(true);
+  });
+
+  it("edits to the empty-state text with a null keyboard when nothing is left", async () => {
+    const gateway = makeGateway();
+
+    await refreshListMessage(gateway, listUC, repo, 777, 42);
+
+    expect(gateway.editListMessage).toHaveBeenCalledWith(
+      777,
+      42,
+      expect.stringMatching(/немає активних/i),
+      null
+    );
+  });
+
+  it("swallows a gateway edit failure without throwing (best-effort refresh)", async () => {
+    repo.reminders.set(1, pending(1, Date.now() + 60_000, "x"));
+    const gateway = makeGateway();
+    (gateway.editListMessage as any).mockRejectedValue(new Error("edit window expired"));
+
+    await expect(refreshListMessage(gateway, listUC, repo, 777, 42)).resolves.not.toThrow();
   });
 });
 

@@ -4,6 +4,7 @@ import type {
   ActiveListViewModel,
 } from "../../app/use-cases/list-active-reminders.js";
 import type { CancelPendingReminder } from "../../app/use-cases/cancel-pending-reminder.js";
+import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import { InvalidStateTransitionError, ReminderNotFoundError } from "../../domain/errors.js";
 import { isOwner } from "../middleware/auth-middleware.js";
 import { LIST_CALLBACK } from "../dto/index.js";
@@ -79,6 +80,35 @@ function renderListMessage(
   }
 
   return { text: lines.join("\n"), inlineKeyboard };
+}
+
+/**
+ * Re-runs the Active-list query and edits an existing /list message in place
+ * with the fresh result — used after the Owner's own Cancel/Delete tap on
+ * that message (issue #8). Best-effort: an edit failure (e.g. Telegram's
+ * edit window) is logged and swallowed, never thrown, since the caller has
+ * already sent a confirmation reply that must stand on its own.
+ */
+export async function refreshListMessage(
+  gateway: TelegramGateway,
+  listUC: ListActiveReminders,
+  repo: ReminderRepository,
+  chatId: number,
+  messageId: number
+): Promise<void> {
+  try {
+    const vm = await listUC.execute();
+    if (vm.isEmpty) {
+      await gateway.editListMessage(chatId, messageId, EMPTY_MESSAGE, null);
+      return;
+    }
+    const settings = await repo.getOwnerSettings();
+    const timezone = settings?.timezone ?? "UTC";
+    const { text, inlineKeyboard } = renderListMessage(vm, timezone);
+    await gateway.editListMessage(chatId, messageId, text, inlineKeyboard);
+  } catch (err) {
+    console.warn({ module: "list", event: "refresh_failed", error: String(err) });
+  }
 }
 
 /**
