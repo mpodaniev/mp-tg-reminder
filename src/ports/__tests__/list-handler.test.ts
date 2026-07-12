@@ -175,9 +175,6 @@ function makeCallbackCtx() {
   return {
     answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
     reply: vi.fn().mockResolvedValue(undefined),
-    // exposed so a regression that starts editing the rendered list message
-    // (violating the ADR-0002 immutable snapshot) is caught.
-    editMessageText: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -195,26 +192,37 @@ function makeGateway(): TelegramGateway {
 describe("handleListCancel — cancel callback (T7, AC-03/AC-04)", () => {
   let repo: InMemoryReminderRepository;
   let cancelUC: CancelPendingReminder;
+  let listUC: ListActiveReminders;
+  let gateway: TelegramGateway;
 
   beforeEach(() => {
     repo = new InMemoryReminderRepository(OWNER_ID, TZ);
     cancelUC = new CancelPendingReminder(repo);
+    listUC = new ListActiveReminders(repo);
+    gateway = makeGateway();
   });
 
-  it("cancels a pending reminder and confirms in a separate message (AC-03)", async () => {
+  it("cancels a pending reminder, confirms, then refreshes the list message in place (AC-03, issue #8)", async () => {
     repo.reminders.set(1, pending(1, Date.now() + 60_000, "doomed"));
-    const ctx = makeCallbackCtx();
+    repo.reminders.set(2, pending(2, Date.now() + 120_000, "survivor"));
+    const ctx = { ...makeCallbackCtx(), callbackQuery: { message: { message_id: 42 } } };
 
-    await handleListCancel(ctx as any, cancelUC, 1);
+    await handleListCancel(ctx as any, cancelUC, gateway, repo, listUC, 1, OWNER_ID);
 
     expect((await repo.findById(1))!.state).toBe("deleted");
     expect(ctx.answerCallbackQuery).toHaveBeenCalled();
     expect(ctx.reply).toHaveBeenCalledTimes(1);
     const [text] = ctx.reply.mock.calls[0]!;
     expect(text.toLowerCase()).toMatch(/скасован/);
-    // the rendered list message is a frozen point-in-time snapshot — confirm
-    // the cancel path never edits it (ADR-0002 / AC-03).
-    expect(ctx.editMessageText).not.toHaveBeenCalled();
+    // ADR-0002's immutable-snapshot default now has one deliberate exception:
+    // the Owner's own tap on the list refreshes that same message in place
+    // (docs/superpowers/specs/2026-07-12-list-live-refresh-design.md).
+    expect(gateway.editListMessage).toHaveBeenCalledTimes(1);
+    const [chatId, messageId, refreshedText] = (gateway.editListMessage as any).mock.calls[0];
+    expect(chatId).toBe(OWNER_ID);
+    expect(messageId).toBe(42);
+    expect(refreshedText).not.toContain("doomed");
+    expect(refreshedText).toContain("survivor");
   });
 
   it.each<ReminderState>(["firing", "fired", "done", "deleted", "expired"])(
@@ -222,40 +230,53 @@ describe("handleListCancel — cancel callback (T7, AC-03/AC-04)", () => {
     async (state) => {
       const r = Reminder.reconstitute({ id: 2, snapshot: snapshot(2, "stale"), state });
       repo.reminders.set(2, r);
-      const ctx = makeCallbackCtx();
+      const ctx = { ...makeCallbackCtx(), callbackQuery: { message: { message_id: 42 } } };
 
-      await handleListCancel(ctx as any, cancelUC, 2);
+      await handleListCancel(ctx as any, cancelUC, gateway, repo, listUC, 2, OWNER_ID);
 
       expect((await repo.findById(2))!.state).toBe(state);
       expect(ctx.answerCallbackQuery).toHaveBeenCalled();
       expect(ctx.reply).toHaveBeenCalledTimes(1);
       const [text] = ctx.reply.mock.calls[0]!;
       expect(text.toLowerCase()).toMatch(/більше не активне/);
+      expect(gateway.editListMessage).not.toHaveBeenCalled();
     }
   );
 
   it("shows the uniform no-op without crashing when the reminder row is absent (AC-04)", async () => {
     // nothing seeded → findById returns null (e.g. a since-purged row); a stale
     // tap must never escape to bot.catch (ADR-0002 immutable snapshot).
-    const ctx = makeCallbackCtx();
+    const ctx = { ...makeCallbackCtx(), callbackQuery: { message: { message_id: 42 } } };
 
-    await handleListCancel(ctx as any, cancelUC, 404);
+    await handleListCancel(ctx as any, cancelUC, gateway, repo, listUC, 404, OWNER_ID);
 
     expect(ctx.answerCallbackQuery).toHaveBeenCalled();
     expect(ctx.reply).toHaveBeenCalledTimes(1);
     const [text] = ctx.reply.mock.calls[0]!;
     expect(text.toLowerCase()).toMatch(/більше не активне/);
+    expect(gateway.editListMessage).not.toHaveBeenCalled();
   });
 
   it("the uniform no-op message is identical for every non-pending end state (AC-04)", async () => {
     const messages: string[] = [];
     for (const state of ["firing", "fired", "done", "deleted", "expired"] as ReminderState[]) {
       repo.reminders.set(3, Reminder.reconstitute({ id: 3, snapshot: snapshot(3, "x"), state }));
-      const ctx = makeCallbackCtx();
-      await handleListCancel(ctx as any, cancelUC, 3);
+      const ctx = { ...makeCallbackCtx(), callbackQuery: { message: { message_id: 42 } } };
+      await handleListCancel(ctx as any, cancelUC, gateway, repo, listUC, 3, OWNER_ID);
       messages.push(ctx.reply.mock.calls[0]![0]);
     }
     expect(new Set(messages).size).toBe(1);
+  });
+
+  it("skips the refresh (but still confirms) when the ctx has no callbackQuery.message", async () => {
+    repo.reminders.set(5, pending(5, Date.now() + 60_000, "doomed"));
+    const ctx = makeCallbackCtx(); // no callbackQuery at all
+
+    await handleListCancel(ctx as any, cancelUC, gateway, repo, listUC, 5, OWNER_ID);
+
+    expect((await repo.findById(5))!.state).toBe("deleted");
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(gateway.editListMessage).not.toHaveBeenCalled();
   });
 });
 

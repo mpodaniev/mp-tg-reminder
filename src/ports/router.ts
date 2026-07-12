@@ -109,7 +109,7 @@ export function buildRouter(
           return handleResolve(ctx, resolveUC, gateway, reminderId, action as "done" | "delete", ownerChatId);
         }
         if (action === "cancel") {
-          return handleListCancel(ctx, cancelUC, reminderId);
+          return handleListCancel(ctx, cancelUC, gateway, repo, listUC, reminderId, ownerChatId);
         }
         if (action === "source") {
           return handleSource(ctx, repo, gateway, reminderId, ownerChatId);

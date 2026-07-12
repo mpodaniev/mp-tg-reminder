@@ -49,3 +49,13 @@ The Active list message carries per-reminder action buttons (cancel, go-to-sourc
 - Spec: [[../spec.md]] AC-03, AC-04
 - SAD: [[../sad.md]] §4, §6
 - Related ADR: [[0001-reuse-deleted-state-for-cancel]]
+
+## Update — 2026-07-12
+
+Partially superseded by `docs/superpowers/specs/2026-07-12-list-live-refresh-design.md`
+(GitHub issue #8): the Owner's own Cancel/Delete tap on a `/list` message now
+edits that same message in place to drop the row — the "Live-edit" option
+this ADR considered and deferred (see Consequences, Neutral). The core
+decision still holds for every other case: a `/list` message is never edited
+for reasons other than the Owner's own action on it (e.g. another reminder
+firing in the background never pushes a live update to an open list).

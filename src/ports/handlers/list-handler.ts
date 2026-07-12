@@ -17,6 +17,7 @@ type MinimalCtx = {
 type MinimalCallbackCtx = {
   answerCallbackQuery: (text?: string) => Promise<any>;
   reply: (text: string, opts?: any) => Promise<any>;
+  callbackQuery?: { message?: { message_id: number } };
 };
 
 const EMPTY_MESSAGE = "📭 Немає активних нагадувань.";
@@ -149,14 +150,20 @@ export async function handleList(
 
 /**
  * Cancel callback from the Active list. On success the reminder moves
- * pending→deleted and the Owner is confirmed in a separate message; the rendered
- * list message is never edited (immutable snapshot, ADR-0002). A tap on a
- * reminder that is no longer pending surfaces the uniform no-op (AC-03 / AC-04).
+ * pending→deleted, the Owner is confirmed in a separate message, then the
+ * tapped /list message itself is refreshed in place to drop the row
+ * (issue #8 — supersedes ADR-0002's default for the Owner's own action, see
+ * that ADR's Update note). A tap on a reminder that is no longer pending
+ * surfaces the uniform no-op (AC-03 / AC-04) without any refresh.
  */
 export async function handleListCancel(
   ctx: MinimalCallbackCtx,
   cancelUC: CancelPendingReminder,
-  reminderId: number
+  gateway: TelegramGateway,
+  repo: ReminderRepository,
+  listUC: ListActiveReminders,
+  reminderId: number,
+  ownerChatId: number
 ): Promise<void> {
   try {
     await cancelUC.execute({ reminderId });
@@ -174,5 +181,10 @@ export async function handleListCancel(
       return;
     }
     throw err;
+  }
+
+  const messageId = ctx.callbackQuery?.message?.message_id;
+  if (messageId !== undefined) {
+    await refreshListMessage(gateway, listUC, repo, ownerChatId, messageId);
   }
 }
