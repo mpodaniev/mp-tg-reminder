@@ -111,4 +111,31 @@ describe("handleResolve callback handler", () => {
 
     expect((gateway as any).editListMessage).not.toHaveBeenCalled();
   });
+
+  it("guards a stale delete tap: no crash, no cleanup, uniform toast, no state change (issue #12)", async () => {
+    const r = Reminder.reconstitute({ id: 6, snapshot: makeSnapshot(6), state: "pending", scheduledAt: Date.now() + 1000 });
+    repo.reminders.set(6, r);
+    const gateway = makeFakeGateway();
+    const ctx = { answerCallbackQuery: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(
+      handleResolve(ctx as any, resolveUC, gateway, 6, "delete", CHAT_ID)
+    ).resolves.not.toThrow();
+
+    expect(gateway.deleteMessage).not.toHaveBeenCalled();
+    expect(repo.reminders.get(6)!.state).toBe("pending");
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(expect.stringMatching(/більше не активне/i));
+  });
+
+  it("a stale delete tap on a non-existent/forged reminderId degrades gracefully, no unhandled throw (issue #12)", async () => {
+    const gateway = makeFakeGateway();
+    const ctx = { answerCallbackQuery: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(
+      handleResolve(ctx as any, resolveUC, gateway, 998, "delete", CHAT_ID)
+    ).resolves.not.toThrow();
+
+    expect(gateway.deleteMessage).not.toHaveBeenCalled();
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(expect.stringMatching(/більше не активне/i));
+  });
 });
