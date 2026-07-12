@@ -100,4 +100,15 @@ describe("handleResolve callback handler", () => {
     expect(gateway.deleteMessage).toHaveBeenCalledWith(CHAT_ID, 44);
     expect(repo.reminders.get(3)!.state).toBe("deleted");
   });
+
+  it("never touches any /list message — delete on the fired-notification's own button stays isolated (issue #8)", async () => {
+    const r = Reminder.reconstitute({ id: 5, snapshot: makeSnapshot(5), state: "fired", firedMessageId: 55 });
+    repo.reminders.set(5, r);
+    const gateway = makeFakeGateway();
+    const ctx = { answerCallbackQuery: vi.fn().mockResolvedValue(undefined) };
+
+    await handleResolve(ctx as any, resolveUC, gateway, 5, "delete", CHAT_ID);
+
+    expect((gateway as any).editListMessage).not.toHaveBeenCalled();
+  });
 });

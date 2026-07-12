@@ -55,6 +55,21 @@ describe("Router: /list wiring (T8, AC-05/AC-07)", () => {
     };
   }
 
+  function listDeleteCtx(fromId: number, messageId = 55) {
+    return {
+      from: { id: fromId },
+      callbackQuery: { id: "cq", data: "list_delete:1", message: { message_id: messageId } },
+      answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function fired(id: number, text: string, firedMessageId: number): Reminder {
+    return Reminder.reconstitute({
+      id, snapshot: snapshot(id, text), state: "fired", firedMessageId,
+    });
+  }
+
   it("routes /list for the Owner and replies with the Active list (AC-07)", async () => {
     repo.reminders.set(1, pending(1, Date.UTC(2026, 5, 20, 11, 30), "task one"));
     const ctx = listCtx(OWNER_ID);
@@ -97,6 +112,36 @@ describe("Router: /list wiring (T8, AC-05/AC-07)", () => {
     await router.handleUpdate(ctx as any);
 
     expect((await repo.findById(1))!.state).toBe("pending");
+    expect(ctx.reply).not.toHaveBeenCalled();
+  });
+
+  it("deletes a fired reminder via the list_delete callback, confirms, and refreshes the tapped list message (issue #8)", async () => {
+    repo.reminders.set(1, fired(1, "gone", 909));
+    // A second, still-active reminder ensures the refreshed list is non-empty
+    // (a real inline keyboard, not the null used for the empty-state), so the
+    // editListMessage assertion below exercises the row-refresh path rather
+    // than the unrelated empty-list path (mirrors list-handler.test.ts's
+    // handleListDelete fixture).
+    repo.reminders.set(2, pending(2, Date.now() + 60_000, "survivor"));
+    const gateway = makeGateway();
+    const routerWithGateway = buildRouter(repo, gateway, OWNER_ID, new InMemoryPendingPromptRepository());
+    const ctx = listDeleteCtx(OWNER_ID);
+
+    await routerWithGateway.handleUpdate(ctx as any);
+
+    expect((await repo.findById(1))!.state).toBe("deleted");
+    expect(ctx.reply).toHaveBeenCalled();
+    expect((gateway.editListMessage as any)).toHaveBeenCalledWith(
+      OWNER_ID, 55, expect.any(String), expect.anything()
+    );
+  });
+
+  it("ignores the list_delete callback from a non-Owner — no mutation", async () => {
+    repo.reminders.set(1, fired(1, "gone", 909));
+    const ctx = listDeleteCtx(NON_OWNER_ID);
+    await router.handleUpdate(ctx as any);
+
+    expect((await repo.findById(1))!.state).toBe("fired");
     expect(ctx.reply).not.toHaveBeenCalled();
   });
 });

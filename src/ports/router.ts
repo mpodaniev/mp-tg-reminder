@@ -9,7 +9,7 @@ import { handleSettings } from "./handlers/settings-handler.js";
 import { handleSnooze, handleSnoozePick } from "./handlers/snooze-handler.js";
 import { handleResolve } from "./handlers/resolve-handler.js";
 import { handleSource } from "./handlers/source-handler.js";
-import { handleList, handleListCancel } from "./handlers/list-handler.js";
+import { handleList, handleListCancel, handleListDelete } from "./handlers/list-handler.js";
 import { ListActiveReminders } from "../app/use-cases/list-active-reminders.js";
 import { CancelPendingReminder } from "../app/use-cases/cancel-pending-reminder.js";
 import { GetStats } from "../app/use-cases/get-stats.js";
@@ -107,6 +107,9 @@ export function buildRouter(
         }
         if (action === "done" || action === "delete") {
           return handleResolve(ctx, resolveUC, gateway, reminderId, action as "done" | "delete", ownerChatId);
+        }
+        if (action === "list_delete") {
+          return handleListDelete(ctx, resolveUC, gateway, repo, listUC, reminderId, ownerChatId);
         }
         if (action === "cancel") {
           return handleListCancel(ctx, cancelUC, gateway, repo, listUC, reminderId, ownerChatId);
