@@ -11,6 +11,28 @@ type MinimalCtx = {
 // message must not crash and must not resolve the reminder (AC-06).
 const DONE_RETIRED_MESSAGE = "⚠️ Цю дію прибрано. Використайте 🗑 Видалити.";
 
+/**
+ * Clears the original fired-reminder notification in chat: deletes it if
+ * still within Telegram's 48h delete window, otherwise replaces its text
+ * with a placeholder. No-ops when there is no notification to clean up.
+ */
+export async function cleanupFiredNotification(
+  gateway: TelegramGateway,
+  chatId: number,
+  firedMessageId: number | null
+): Promise<void> {
+  if (!firedMessageId) return;
+  try {
+    await gateway.deleteMessage(chatId, firedMessageId);
+  } catch (err) {
+    if (err instanceof TelegramDeleteWindowError) {
+      await gateway.editMessageToPlaceholder(chatId, firedMessageId, "🗑 Нагадування видалено");
+    } else {
+      throw err;
+    }
+  }
+}
+
 export async function handleResolve(
   ctx: MinimalCtx,
   resolveUC: ResolveReminder,
@@ -33,21 +55,7 @@ export async function handleResolve(
     throw err;
   }
 
-  if (reminder.firedMessageId) {
-    try {
-      await gateway.deleteMessage(ownerChatId, reminder.firedMessageId);
-    } catch (err) {
-      if (err instanceof TelegramDeleteWindowError) {
-        await gateway.editMessageToPlaceholder(
-          ownerChatId,
-          reminder.firedMessageId,
-          "🗑 Нагадування видалено"
-        );
-      } else {
-        throw err;
-      }
-    }
-  }
+  await cleanupFiredNotification(gateway, ownerChatId, reminder.firedMessageId);
 
   await ctx.answerCallbackQuery();
 }

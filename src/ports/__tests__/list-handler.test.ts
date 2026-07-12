@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handleList, handleListCancel, refreshListMessage } from "../handlers/list-handler.js";
+import { handleList, handleListCancel, handleListDelete, refreshListMessage } from "../handlers/list-handler.js";
 import { handleSource } from "../handlers/source-handler.js";
 import { ListActiveReminders } from "../../app/use-cases/list-active-reminders.js";
 import { CancelPendingReminder } from "../../app/use-cases/cancel-pending-reminder.js";
+import { ResolveReminder } from "../../app/use-cases/resolve-reminder.js";
 import { InMemoryReminderRepository } from "../../app/use-cases/__tests__/helpers/in-memory-repo.js";
 import { Reminder } from "../../domain/reminder.js";
 import type { ReminderState } from "../../domain/state-machine.js";
@@ -148,10 +149,10 @@ describe("handleList — /list command handler (T6)", () => {
     // A fired row has no Cancel, but it must offer Delete directly from the
     // list — the Owner shouldn't have to hunt down the original fired
     // message in chat just to clear it (AC-09, added-by-fix).
-    expect(keyboard.some((b: any) => b.callback_data === "delete:2")).toBe(true);
+    expect(keyboard.some((b: any) => b.callback_data === "list_delete:2")).toBe(true);
     // A still-scheduled row has no Delete — it isn't resolved yet, Cancel is
     // its only exit.
-    expect(keyboard.some((b: any) => b.callback_data === "delete:1")).toBe(false);
+    expect(keyboard.some((b: any) => b.callback_data === "list_delete:1")).toBe(false);
   });
 
   it("emits a structured timing log around the list use-case (NFR §6 / QG-3)", async () => {
@@ -322,6 +323,65 @@ describe("refreshListMessage — in-place /list edit (issue #8)", () => {
     (gateway.editListMessage as any).mockRejectedValue(new Error("edit window expired"));
 
     await expect(refreshListMessage(gateway, listUC, repo, 777, 42)).resolves.not.toThrow();
+  });
+});
+
+describe("handleListDelete — delete callback from the list (issue #8)", () => {
+  let repo: InMemoryReminderRepository;
+  let resolveUC: ResolveReminder;
+  let listUC: ListActiveReminders;
+  let gateway: TelegramGateway;
+
+  beforeEach(() => {
+    repo = new InMemoryReminderRepository(OWNER_ID, TZ);
+    resolveUC = new ResolveReminder(repo);
+    listUC = new ListActiveReminders(repo);
+    gateway = makeGateway();
+  });
+
+  it("deletes a fired reminder, cleans up its notification, confirms, then refreshes the list", async () => {
+    const r = Reminder.reconstitute({
+      id: 1, snapshot: snapshot(1, "gone"), state: "fired", firedMessageId: 909,
+    });
+    repo.reminders.set(1, r);
+    repo.reminders.set(2, pending(2, Date.now() + 60_000, "survivor"));
+    const ctx = { ...makeCallbackCtx(), callbackQuery: { message: { message_id: 42 } } };
+
+    await handleListDelete(ctx as any, resolveUC, gateway, repo, listUC, 1, OWNER_ID);
+
+    expect((await repo.findById(1))!.state).toBe("deleted");
+    expect(gateway.deleteMessage).toHaveBeenCalledWith(OWNER_ID, 909);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(ctx.reply.mock.calls[0]![0].toLowerCase()).toMatch(/видален/);
+    expect(gateway.editListMessage).toHaveBeenCalledTimes(1);
+    const [, , refreshedText] = (gateway.editListMessage as any).mock.calls[0];
+    expect(refreshedText).not.toContain("gone");
+    expect(refreshedText).toContain("survivor");
+  });
+
+  it("shows the uniform no-op and skips cleanup/refresh on a stale tap (not fired)", async () => {
+    const r = Reminder.reconstitute({ id: 2, snapshot: snapshot(2, "still pending"), state: "pending", scheduledAt: Date.now() + 1000 });
+    repo.reminders.set(2, r);
+    const ctx = { ...makeCallbackCtx(), callbackQuery: { message: { message_id: 42 } } };
+
+    await handleListDelete(ctx as any, resolveUC, gateway, repo, listUC, 2, OWNER_ID);
+
+    expect((await repo.findById(2))!.state).toBe("pending");
+    expect(gateway.deleteMessage).not.toHaveBeenCalled();
+    expect(gateway.editListMessage).not.toHaveBeenCalled();
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(ctx.reply.mock.calls[0]![0].toLowerCase()).toMatch(/більше не активне/);
+  });
+
+  it("shows the uniform no-op without crashing when the reminder row is absent", async () => {
+    const ctx = { ...makeCallbackCtx(), callbackQuery: { message: { message_id: 42 } } };
+
+    await expect(
+      handleListDelete(ctx as any, resolveUC, gateway, repo, listUC, 404, OWNER_ID)
+    ).resolves.not.toThrow();
+
+    expect(ctx.reply.mock.calls[0]![0].toLowerCase()).toMatch(/більше не активне/);
+    expect(gateway.editListMessage).not.toHaveBeenCalled();
   });
 });
 

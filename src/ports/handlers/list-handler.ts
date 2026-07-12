@@ -4,10 +4,12 @@ import type {
   ActiveListViewModel,
 } from "../../app/use-cases/list-active-reminders.js";
 import type { CancelPendingReminder } from "../../app/use-cases/cancel-pending-reminder.js";
+import type { ResolveReminder } from "../../app/use-cases/resolve-reminder.js";
 import type { TelegramGateway } from "../../app/ports/telegram-gateway.js";
 import { InvalidStateTransitionError, ReminderNotFoundError } from "../../domain/errors.js";
 import { isOwner } from "../middleware/auth-middleware.js";
 import { LIST_CALLBACK } from "../dto/index.js";
+import { cleanupFiredNotification } from "./resolve-handler.js";
 
 type MinimalCtx = {
   from?: { id: number };
@@ -22,6 +24,7 @@ type MinimalCallbackCtx = {
 
 const EMPTY_MESSAGE = "📭 Немає активних нагадувань.";
 const CANCEL_CONFIRM_MESSAGE = "✅ Нагадування скасовано.";
+const DELETE_CONFIRM_MESSAGE = "✅ Нагадування видалено.";
 // Uniform reply for every non-pending end state — the list is a point-in-time
 // snapshot, so a tap on an entry that has since changed state is a safe no-op (AC-04).
 const NOT_ACTIVE_MESSAGE = "⚠️ Це нагадування більше не активне.";
@@ -182,6 +185,50 @@ export async function handleListCancel(
     }
     throw err;
   }
+
+  const messageId = ctx.callbackQuery?.message?.message_id;
+  if (messageId !== undefined) {
+    await refreshListMessage(gateway, listUC, repo, ownerChatId, messageId);
+  }
+}
+
+/**
+ * Delete callback from the Active list, for an already-fired row. On success
+ * the reminder moves fired→deleted, the original fired-notification message
+ * is cleaned up, the Owner is confirmed, then the tapped /list message is
+ * refreshed in place to drop the row (issue #8). Routed separately from the
+ * fired-notification's own Delete button (`action: "delete"`, handled by
+ * `handleResolve`) via the distinct `list_delete` callback — see
+ * `src/ports/dto/index.ts`.
+ */
+export async function handleListDelete(
+  ctx: MinimalCallbackCtx,
+  resolveUC: ResolveReminder,
+  gateway: TelegramGateway,
+  repo: ReminderRepository,
+  listUC: ListActiveReminders,
+  reminderId: number,
+  ownerChatId: number
+): Promise<void> {
+  let reminder;
+  try {
+    reminder = await resolveUC.execute({ reminderId, action: "delete" });
+  } catch (err) {
+    if (
+      err instanceof InvalidStateTransitionError ||
+      err instanceof ReminderNotFoundError
+    ) {
+      await ctx.answerCallbackQuery();
+      await ctx.reply(NOT_ACTIVE_MESSAGE);
+      return;
+    }
+    throw err;
+  }
+
+  await cleanupFiredNotification(gateway, ownerChatId, reminder.firedMessageId);
+
+  await ctx.answerCallbackQuery();
+  await ctx.reply(DELETE_CONFIRM_MESSAGE);
 
   const messageId = ctx.callbackQuery?.message?.message_id;
   if (messageId !== undefined) {
