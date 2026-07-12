@@ -127,6 +127,12 @@ feature_size: "S"
 **When** the Owner taps that entry's Delete action from the list, instead of the fired-reminder message in chat
 **Then** the reminder is deleted the same way it would be from that message's Delete button — the Owner is never required to locate the original fired message just to clear the list
 
+### AC-10 (US-05) — error / edge case <!-- added-by-fix: 2026-07-12 -->
+
+**Given** an authorized Owner taps the Delete action on a fired-reminder message for a reminder that is no longer `fired` (already deleted, or a stale pre-rollout tap)
+**When** the tap is processed
+**Then** the bot does not crash and does not change the reminder's state; the Owner sees the same uniform "no longer active" toast used elsewhere in the app, and the request completes successfully (no HTTP 500)
+
 ## 6. Non-functional requirements
 
 | Aspect | Target | Measurement |
@@ -176,6 +182,7 @@ feature_size: "S"
 | AC-07 | Non-Owner sees no reminders, scheduled or fired | `non-owner is rejected on the list command regardless of reminder mix` | unit | **dedicated authorization row.** extends the existing owner-gate test with a fired reminder present |
 | AC-08 | Oversized visible set → exactly 1 message, earliest-added that fit + overflow indicator | `truncation keeps earliest-added within the message budget and counts overflow` (unit) + `oversized visible set sends exactly one message with overflow indicator` (integration) | unit + integration | **dedicated anti-flood-invariant row**, restated against capture-order sort |
 | AC-09 | Fired entries expose a Delete action directly in the list | `marks fired rows with a distinct flag and omits Cancel; scheduled rows keep Cancel (AC-02/AC-05)` | unit | `<!-- added-by-fix: 2026-07-10 -->`; asserts `delete:<id>` on fired rows, absent on scheduled rows |
+| AC-10 | Stale/repeat Delete tap after the reminder is no longer fired → graceful message, no crash, no state change | `guards a stale delete tap: no crash, no cleanup, uniform toast, no state change (issue #12)` + `a stale delete tap on a non-existent/forged reminderId degrades gracefully, no unhandled throw (issue #12)` | unit | `<!-- added-by-fix: 2026-07-12 -->`; mirrors AC-06's done-guard for the delete action |
 
 Every §5 criterion maps to ≥1 test; AC-04 (invariant), AC-05 (cross-context), and AC-07 (authorization) each have a dedicated row, not folded into a happy path.
 

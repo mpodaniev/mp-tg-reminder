@@ -11,6 +11,11 @@ type MinimalCtx = {
 // message must not crash and must not resolve the reminder (AC-06).
 const DONE_RETIRED_MESSAGE = "⚠️ Цю дію прибрано. Використайте 🗑 Видалити.";
 
+// Uniform reply for a stale/repeat `delete` tap on a reminder that is no
+// longer `fired` (already deleted, or never fired) — mirrors the same
+// no-crash guarantee AC-06 gives `done`, extended to `delete` (issue #12).
+const STALE_DELETE_MESSAGE = "⚠️ Це нагадування більше не активне.";
+
 /**
  * Clears the original fired-reminder notification in chat: deletes it if
  * still within Telegram's 48h delete window, otherwise replaces its text
@@ -45,11 +50,8 @@ export async function handleResolve(
   try {
     reminder = await resolveUC.execute({ reminderId, action });
   } catch (err) {
-    if (
-      action === "done" &&
-      (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError)
-    ) {
-      await ctx.answerCallbackQuery(DONE_RETIRED_MESSAGE);
+    if (err instanceof InvalidStateTransitionError || err instanceof ReminderNotFoundError) {
+      await ctx.answerCallbackQuery(action === "done" ? DONE_RETIRED_MESSAGE : STALE_DELETE_MESSAGE);
       return;
     }
     throw err;
