@@ -71,6 +71,17 @@ export class GrammyTelegramGateway implements TelegramGateway {
     await this.api.editMessageText(chatId, messageId, text);
   }
 
+  async editListMessage(
+    chatId: number,
+    messageId: number,
+    text: string,
+    inlineKeyboard: any[][] | null
+  ): Promise<void> {
+    await this.api.editMessageText(chatId, messageId, text, {
+      reply_markup: { inline_keyboard: inlineKeyboard ?? [] },
+    });
+  }
+
   async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
     await this.api.answerCallbackQuery(callbackQueryId, text ? { text } : undefined);
   }

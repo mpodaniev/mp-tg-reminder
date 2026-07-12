@@ -108,4 +108,25 @@ describe("GrammyTelegramGateway", () => {
     await gateway.editMessageToPlaceholder(777, 42, "✅ Done");
     expect(mockApi.editMessageText).toHaveBeenCalledWith(777, 42, "✅ Done");
   });
+
+  it("editListMessage calls api.editMessageText with the given text and keyboard", async () => {
+    const keyboard = [[{ text: "🗑 Скасувати #1", callback_data: "cancel:1" }]];
+    await gateway.editListMessage(777, 42, "📋 Активні нагадування:\n\n1. row", keyboard);
+    expect(mockApi.editMessageText).toHaveBeenCalledWith(
+      777,
+      42,
+      "📋 Активні нагадування:\n\n1. row",
+      { reply_markup: { inline_keyboard: keyboard } }
+    );
+  });
+
+  it("editListMessage clears the keyboard when passed null (empty-state case)", async () => {
+    await gateway.editListMessage(777, 42, "📭 Немає активних нагадувань.", null);
+    expect(mockApi.editMessageText).toHaveBeenCalledWith(
+      777,
+      42,
+      "📭 Немає активних нагадувань.",
+      { reply_markup: { inline_keyboard: [] } }
+    );
+  });
 });

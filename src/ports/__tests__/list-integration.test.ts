@@ -101,6 +101,7 @@ describe("go-to-source reads the reminder⨝snapshot JOIN from real SQLite (AC-0
       sendReminder: vi.fn().mockResolvedValue({ messageId: 1 }),
       deleteMessage: vi.fn().mockResolvedValue(undefined),
       editMessageToPlaceholder: vi.fn().mockResolvedValue(undefined),
+      editListMessage: vi.fn().mockResolvedValue(undefined),
       answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
       sendMessage: vi.fn().mockResolvedValue(undefined),
     };
