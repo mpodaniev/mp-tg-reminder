@@ -33,6 +33,7 @@ function makeFakeGateway(deleteThrows = false): TelegramGateway {
       ? vi.fn().mockRejectedValue(new TelegramDeleteWindowError())
       : vi.fn().mockResolvedValue(undefined),
     editMessageToPlaceholder: vi.fn().mockResolvedValue(undefined),
+    editListMessage: vi.fn().mockResolvedValue(undefined),
     answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
     sendMessage: vi.fn().mockResolvedValue(undefined),
   };

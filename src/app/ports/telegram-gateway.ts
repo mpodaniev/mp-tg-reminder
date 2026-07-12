@@ -15,6 +15,17 @@ export interface TelegramGateway {
     text: string
   ): Promise<void>;
 
+  /**
+   * Edits both the text and inline keyboard of an existing message.
+   * `inlineKeyboard: null` clears the keyboard entirely (empty-state case).
+   */
+  editListMessage(
+    chatId: number,
+    messageId: number,
+    text: string,
+    inlineKeyboard: any[][] | null
+  ): Promise<void>;
+
   answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void>;
 
   sendMessage(chatId: number, text: string): Promise<void>;
