@@ -62,7 +62,7 @@ target_surfaces: [backend-service]  # unchanged — inherited from telegram-remi
 - New behavior lives entirely in `src/ports/` — a sibling handler next to the existing `handleForwardedMessage`, and one new precedence branch in `router.ts` — reusing `src/app/use-cases/capture-message.ts` verbatim (no app-layer change).
 
 **Regulatory / external.**
-- Data classification: **Confidential** — unchanged (spec §6.1); typed text is stored through the identical mechanism as forwarded text.
+- Data classification: **internal** — unchanged (spec §6.1); typed text is stored through the identical mechanism as forwarded text.
 - AuthZ: the existing single Owner-ID gate, checked once at the top of every update in `router.ts` before any handler dispatch, already covers this new entry point — no new boundary (spec §6.1, AC-02).
 - No new field or table (spec §6.1) — see Technical above; this is the binding constraint behind the §4 source-representation choice.
 
