@@ -85,4 +85,36 @@ describe("handleSource callback handler", () => {
     expect(text).toContain("private content");
     expect(text.toLowerCase()).toMatch(/недоступне|unavailable|not available/);
   });
+
+  // T3 (AC-06): locks the existing fallback branch against a typed-origin
+  // snapshot exactly as capture-conversation.ts's handlePlainTextMessage
+  // produces it — chatUsername forced null and messageId 0 regardless of the
+  // Owner's own chat having a public username — so "🔗 Джерело" always
+  // resolves to the stored text, never a link, for a typed-origin reminder.
+  it("shows the originally typed text back — never a link — for a typed-origin reminder, even with a public chat username on record (AC-06)", async () => {
+    const typedOriginSnapshot: SourceSnapshot = {
+      id: 3,
+      chatId: 777,
+      messageId: 0,
+      chatUsername: null,
+      senderName: null,
+      senderUsername: null,
+      messageText: "buy milk",
+      mediaFileId: null,
+      mediaType: null,
+      isMediaProtected: false,
+      createdAt: Date.now(),
+    };
+    const r = Reminder.reconstitute({ id: 3, snapshot: typedOriginSnapshot, state: "fired", firedMessageId: 44 });
+    repo.reminders.set(3, r);
+    const gateway = makeFakeGateway();
+    const ctx = makeCtx();
+
+    await handleSource(ctx as any, repo, gateway, 3, CHAT_ID);
+
+    expect(gateway.sendMessage).toHaveBeenCalled();
+    const [, text] = (gateway.sendMessage as any).mock.calls[0];
+    expect(text).toContain("buy milk");
+    expect(text).not.toContain("t.me/");
+  });
 });
