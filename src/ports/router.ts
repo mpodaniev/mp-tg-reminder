@@ -4,7 +4,7 @@ import { ScheduleReminder } from "../app/use-cases/schedule-reminder.js";
 import { SnoozeReminder } from "../app/use-cases/snooze-reminder.js";
 import { ResolveReminder } from "../app/use-cases/resolve-reminder.js";
 import { CaptureMessage } from "../app/use-cases/capture-message.js";
-import { handleForwardedMessage } from "./conversations/capture-conversation.js";
+import { handleForwardedMessage, handlePlainTextMessage } from "./conversations/capture-conversation.js";
 import { handleSettings } from "./handlers/settings-handler.js";
 import { handleSnooze, handleSnoozePick } from "./handlers/snooze-handler.js";
 import { handleResolve } from "./handlers/resolve-handler.js";
@@ -84,6 +84,16 @@ export function buildRouter(
         if (pending) {
           return handleCustomTimeInput(ctx, scheduleUC, snoozeUC, repo, gateway, ownerChatId, pendingPromptRepo, pending);
         }
+
+        // AC-04/AC-05: plain-typed capture — only once a pending time-request
+        // and every recognized command have already been ruled out above.
+        // Command-shaped text (even unrecognized) and empty/whitespace-only
+        // text never start a new capture.
+        const trimmed = msg.text.trim();
+        if (trimmed.length > 0 && !trimmed.startsWith("/")) {
+          return handlePlainTextMessage(ctx, captureUC);
+        }
+        return;
       }
 
       if (ctx.callbackQuery) {
