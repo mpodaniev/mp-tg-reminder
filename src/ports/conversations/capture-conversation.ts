@@ -109,9 +109,10 @@ async function replyWithQuickPick(
 }
 
 // AC-01/AC-02/AC-06: a typed message has no source chat to point back to — the
-// snapshot forces chatUsername/messageId to values that make hasPublicDeepLink()
-// false, so "🔗 Джерело" never constructs a link even if the Owner's own chat
-// happens to have a public username.
+// snapshot forces the no-source-chat sentinel (chatId: 0, messageId: 0,
+// chatUsername: null — sad.md §4 pillar 3 / data-model.md), which makes
+// hasPublicDeepLink() false, so "🔗 Джерело" never constructs a link even if
+// the Owner's own chat happens to have a public username.
 export async function handlePlainTextMessage(
   ctx: MinimalCtx,
   captureUC: CaptureMessage
@@ -123,7 +124,7 @@ export async function handlePlainTextMessage(
   if (!msg) return;
 
   const snapshot = {
-    chatId: msg.chat?.id ?? 0,
+    chatId: 0,
     messageId: 0,
     chatUsername: null,
     senderName: null,

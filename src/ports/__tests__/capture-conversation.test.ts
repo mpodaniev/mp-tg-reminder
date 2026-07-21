@@ -159,6 +159,15 @@ describe("handlePlainTextMessage (typed-origin capture entry, AC-01/AC-01b/AC-03
     expect(reminders[0]!.snapshot.chatUsername).toBeNull();
   });
 
+  it("writes the documented no-source-chat sentinel (chatId: 0, messageId: 0), not the Owner's real chat id", async () => {
+    const ctx = makePlainTextCtx("buy milk");
+    await handlePlainTextMessage(ctx as any, ctx._captureUC);
+
+    const reminders = [...ctx._repo.reminders.values()];
+    expect(reminders[0]!.snapshot.chatId).toBe(0);
+    expect(reminders[0]!.snapshot.messageId).toBe(0);
+  });
+
   it("captures a second typed message as an independent pending reminder while the first is still unanswered (AC-01b)", async () => {
     const repo = new InMemoryReminderRepository(OWNER_ID, "Europe/Kyiv");
     const captureUC = new CaptureMessage(repo);

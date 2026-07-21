@@ -29,7 +29,7 @@ This reverses `docs/features/telegram-reminder/spec.md` §3's second non-goal; t
 
 ## 3. Non-goals
 
-- **Directly-sent media (photo / video / document, not forwarded, not accompanied by text)** — out of scope; this feature only widens what counts as *text* content. Reason: there is no capture story yet for storing/retrieving media sent this way — a separate future feature.
+- **Directly-sent media (photo / video / document, not forwarded)** — out of scope regardless of whether it carries a caption; a captioned photo/video/document is not captured, not even by its caption text. This feature only widens capture to messages that carry no media at all — plain typed text with nothing attached. Reason: there is no capture story yet for storing/retrieving media sent this way — a separate future feature.
 - **Editing the captured text after creation** — the reminder stores what the Owner typed at capture time verbatim. Reason: consistent with the existing immutable-snapshot behavior for forwarded messages.
 - **A new UI trigger (menu button, dedicated command, etc.) for starting a reminder** — the only new trigger is typing plain text into the existing chat. Reason: minimal surface change; anything more belongs to a separate feature.
 - **Any change to the forwarded-message capture flow** — untouched by this feature; purely additive. Reason: keep blast radius to the new entry point only.
@@ -76,7 +76,7 @@ This reverses `docs/features/telegram-reminder/spec.md` §3's second non-goal; t
 
 ### AC-01 (US-01) — happy path
 
-**Given** the Owner sends a plain text message directly to the bot, with no pending time-request waiting and no leading command syntax
+**Given** the Owner sends a plain text message directly to the bot, with no pending time-request waiting and no leading command syntax (per AC-04's precise definition)
 **When** the bot receives it
 **Then** the bot captures it as a new pending reminder and immediately asks "When to remind?" with the same quick-pick buttons and a custom-time option
 
@@ -94,27 +94,39 @@ This reverses `docs/features/telegram-reminder/spec.md` §3's second non-goal; t
 
 ### AC-04 (US-03) — domain invariant
 
-**Given** the Owner sends text that begins with a slash, whether a recognized command or a mistyped/unknown one
+**Given** the Owner sends text that, after trimming leading/trailing whitespace, begins with a slash ("/"), whether a recognized command or a mistyped/unknown one
 **When** the bot receives it
-**Then** the bot never treats that text as reminder content — command-shaped text is never captured as a reminder
+**Then** the bot never treats that text as reminder content — command-shaped text is never captured as a new reminder; for a recognized command the existing command handler's own response applies unchanged, and for an unrecognized command the bot sends no response at all. This exclusion governs only the *starting a new capture* decision — it does not override an already-pending time-request (see AC-04b).
+
+### AC-04b (US-06) — cross-context
+
+**Given** the Owner already has a pending request to type a custom time, and sends text that begins with a slash but is not a recognized command
+**When** the bot receives it
+**Then** the bot still treats that text as the answer to the pending time-request per AC-07 — the command-shaped exclusion in AC-04 applies only to starting a brand-new capture, never to an already-pending time-request
 
 ### AC-05 (US-04) — error
 
 **Given** the Owner sends a message whose text is empty or contains only whitespace
 **When** the bot receives it
-**Then** the bot creates no reminder and does not open a "When to remind?" prompt, recognizing there is nothing to capture
+**Then** the bot creates no reminder, does not open a "When to remind?" prompt, and sends no response of any kind, recognizing there is nothing to capture
 
 ### AC-06 (US-05) — domain invariant
 
 **Given** a fired reminder whose content came from typed text rather than a forwarded message
 **When** the Owner taps "🔗 Джерело"
-**Then** the bot shows the originally typed text back to the Owner — the source action always resolves to something visible, never to a dead or missing link
+**Then** the bot shows the originally typed text back to the Owner — for a typed-origin reminder the bot never attempts to construct a link, even if the Owner's own chat happens to have a public username; the source action always resolves to the stored text, never to a dead or nonsense link
 
 ### AC-07 (US-06) — cross-context
 
 **Given** the Owner already has a pending request to type a custom time for a different, previously-started reminder
 **When** the Owner sends a plain text message
 **Then** the bot uses that text as the answer to the pending time-request and does not start a new reminder capture from it
+
+### AC-01b (US-01) — concurrent capture
+
+**Given** the Owner has an outstanding "When to remind?" prompt (quick-pick buttons shown, no time chosen yet) for a previously typed or forwarded message
+**When** the Owner sends another plain text message before answering that prompt
+**Then** the bot captures it as a separate, independent new pending reminder with its own "When to remind?" prompt — an unanswered quick-pick never blocks a new capture
 
 ## 6. Non-functional requirements
 

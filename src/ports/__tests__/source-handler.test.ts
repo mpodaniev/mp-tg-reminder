@@ -88,13 +88,14 @@ describe("handleSource callback handler", () => {
 
   // T3 (AC-06): locks the existing fallback branch against a typed-origin
   // snapshot exactly as capture-conversation.ts's handlePlainTextMessage
-  // produces it — chatUsername forced null and messageId 0 regardless of the
-  // Owner's own chat having a public username — so "🔗 Джерело" always
-  // resolves to the stored text, never a link, for a typed-origin reminder.
+  // produces it — the no-source-chat sentinel (chatId: 0, messageId: 0,
+  // chatUsername: null, sad.md §4 pillar 3) regardless of the Owner's own
+  // chat having a public username — so "🔗 Джерело" always resolves to the
+  // stored text, never a link, for a typed-origin reminder.
   it("shows the originally typed text back — never a link — for a typed-origin reminder, even with a public chat username on record (AC-06)", async () => {
     const typedOriginSnapshot: SourceSnapshot = {
       id: 3,
-      chatId: 777,
+      chatId: 0,
       messageId: 0,
       chatUsername: null,
       senderName: null,
