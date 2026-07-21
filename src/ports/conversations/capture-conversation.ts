@@ -67,6 +67,77 @@ function buildQuickPickKeyboard(reminderId: number, timezone: string, now: Date)
   return rows;
 }
 
+async function replyWithQuickPick(
+  ctx: MinimalCtx,
+  captureUC: CaptureMessage,
+  senderId: number,
+  snapshot: {
+    chatId: number;
+    messageId: number;
+    chatUsername: string | null;
+    senderName: string | null;
+    senderUsername: string | null;
+    messageText: string | null;
+    mediaFileId: string | null;
+    mediaType: string | null;
+    isMediaProtected: boolean;
+  }
+): Promise<void> {
+  try {
+    const reminder = await captureUC.execute({ senderTelegramId: senderId, snapshot });
+
+    const settings = await captureUC.repo.getOwnerSettings();
+    const timezone = settings?.timezone ?? "UTC";
+
+    const keyboard = buildQuickPickKeyboard(reminder.id!, timezone, new Date());
+
+    await ctx.reply("⏰ Коли нагадати?", {
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      return;
+    }
+    if (err instanceof TimezoneNotConfiguredError) {
+      await ctx.reply(
+        "⚙️ Спочатку налаштуйте свій часовий пояс за допомогою /settings, щоб я міг правильно розрахувати час нагадувань."
+      );
+      return;
+    }
+    throw err;
+  }
+}
+
+// AC-01/AC-02/AC-06: a typed message has no source chat to point back to — the
+// snapshot forces the no-source-chat sentinel (chatId: 0, messageId: 0,
+// chatUsername: null — sad.md §4 pillar 3 / data-model.md), which makes
+// hasPublicDeepLink() false, so "🔗 Джерело" never constructs a link even if
+// the Owner's own chat happens to have a public username.
+export async function handlePlainTextMessage(
+  ctx: MinimalCtx,
+  captureUC: CaptureMessage
+): Promise<void> {
+  const senderId = ctx.from?.id;
+  if (!senderId) return;
+
+  const msg = ctx.message;
+  if (!msg) return;
+
+  const snapshot = {
+    chatId: 0,
+    messageId: 0,
+    chatUsername: null,
+    senderName: null,
+    senderUsername: null,
+    messageText: msg.text ?? null,
+    mediaFileId: null as string | null,
+    mediaType: null as string | null,
+    isMediaProtected: false,
+  };
+
+  await replyWithQuickPick(ctx, captureUC, senderId, snapshot);
+}
+
 export async function handleForwardedMessage(
   ctx: MinimalCtx,
   captureUC: CaptureMessage
@@ -99,27 +170,5 @@ export async function handleForwardedMessage(
     isMediaProtected: msg.has_protected_content ?? false,
   };
 
-  try {
-    const reminder = await captureUC.execute({ senderTelegramId: senderId, snapshot });
-
-    const settings = await captureUC.repo.getOwnerSettings();
-    const timezone = settings?.timezone ?? "UTC";
-
-    const keyboard = buildQuickPickKeyboard(reminder.id!, timezone, new Date());
-
-    await ctx.reply("⏰ Коли нагадати?", {
-      reply_markup: { inline_keyboard: keyboard },
-    });
-  } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return;
-    }
-    if (err instanceof TimezoneNotConfiguredError) {
-      await ctx.reply(
-        "⚙️ Спочатку налаштуйте свій часовий пояс за допомогою /settings, щоб я міг правильно розрахувати час нагадувань."
-      );
-      return;
-    }
-    throw err;
-  }
+  await replyWithQuickPick(ctx, captureUC, senderId, snapshot);
 }

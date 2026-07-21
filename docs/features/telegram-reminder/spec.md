@@ -30,7 +30,7 @@ Competitive analysis was not available (RESEARCH_LIMITED). Devil's-advocate anal
 ## 3. Non-goals
 
 - **Multi-user support** — the bot is bound to a single Telegram account (the Owner); there is no invitation flow, shared list, or per-user isolation logic.
-- **Creating reminders without a source message** — the bot is not a general text-entry reminder scheduler; every reminder must originate from a forwarded Telegram message.
+- **Creating reminders without any content** — the bot still will not schedule an empty reminder; every reminder needs either a forwarded message or plain typed text to remind about. *(Superseded 2026-07-20 by `docs/features/plain-typed-message-capture/spec.md` — that feature removes the "must be forwarded" restriction; a reminder may now also originate from plain text typed directly into the bot chat.)*
 - **Recurring / repeating schedules** — the Owner reschedules one reminder instance at a time via snooze; no daily/weekly repeat patterns.
 - **Editing source message content** — the reminder stores a snapshot of the original message at capture time; the bot does not offer content editing.
 

@@ -244,3 +244,110 @@ describe("Router: centralized Owner gate at dispatch (T7, ADR-0003, AC-04b)", ()
     expect(updated!.state).toBe("pending");
   });
 });
+
+// T2 (plain-typed-message-capture): the router's precedence branch for plain
+// typed text. Dispatch order: recognized commands / forwarded messages / a
+// pending time-request answer all still win (unchanged); only after those are
+// ruled out does ordinary non-empty, non-command-shaped text start a new
+// typed-origin capture.
+describe("Router: plain-text capture dispatch (T2, AC-02/AC-04/AC-04b/AC-05/AC-07)", () => {
+  let repo: InMemoryReminderRepository;
+  let gateway: TelegramGateway;
+  let pendingPromptRepo: InMemoryPendingPromptRepository;
+  let router: ReturnType<typeof buildRouter>;
+
+  beforeEach(() => {
+    repo = new InMemoryReminderRepository(OWNER_ID, TZ);
+    gateway = makeGateway();
+    pendingPromptRepo = new InMemoryPendingPromptRepository();
+    router = buildRouter(repo, gateway, OWNER_CHAT_ID, pendingPromptRepo);
+  });
+
+  function makeTextCtx(senderId: number, text: string) {
+    return {
+      from: { id: senderId },
+      message: { message_id: 1, chat: { id: OWNER_CHAT_ID }, text },
+      reply: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("Owner: ordinary plain text starts a new typed-origin capture with quick-pick prompt (AC-01/AC-04 happy path)", async () => {
+    const ctx = makeTextCtx(OWNER_ID, "buy milk");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(repo.reminders.size).toBe(1);
+    const reminder = [...repo.reminders.values()][0]!;
+    expect(reminder.snapshot.messageText).toBe("buy milk");
+    expect(reminder.state).toBe("awaiting_time");
+  });
+
+  it("non-Owner: plain text creates no reminder and no reply (AC-02)", async () => {
+    const ctx = makeTextCtx(NON_OWNER_ID, "buy milk");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(repo.reminders.size).toBe(0);
+  });
+
+  it("command-shaped but unrecognized text is never captured as a new reminder, no response sent (AC-04)", async () => {
+    const ctx = makeTextCtx(OWNER_ID, "/frobnicate");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(repo.reminders.size).toBe(0);
+  });
+
+  it("command-shaped text with leading/trailing whitespace is still excluded from capture (AC-04)", async () => {
+    const ctx = makeTextCtx(OWNER_ID, "   /frobnicate  ");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(repo.reminders.size).toBe(0);
+  });
+
+  it("empty text creates no reminder and no response (AC-05)", async () => {
+    const ctx = makeTextCtx(OWNER_ID, "");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(repo.reminders.size).toBe(0);
+  });
+
+  it("whitespace-only text creates no reminder and no response (AC-05)", async () => {
+    const ctx = makeTextCtx(OWNER_ID, "   \n\t  ");
+    await router.handleUpdate(ctx as any);
+
+    expect(ctx.reply).not.toHaveBeenCalled();
+    expect(repo.reminders.size).toBe(0);
+  });
+
+  it("a pending time-request answer wins over an ordinary typed message — no new capture started (AC-07)", async () => {
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 1, createdAt: Date.now() });
+    const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "awaiting_time" });
+    repo.reminders.set(1, r);
+
+    const ctx = makeTextCtx(OWNER_ID, "за 2 год");
+    await router.handleUpdate(ctx as any);
+
+    expect(repo.reminders.size).toBe(1);
+    const updated = await repo.findById(1);
+    expect(updated!.state).toBe("pending");
+  });
+
+  it("a pending time-request answer wins even when the reply text is command-shaped but unrecognized (AC-04b)", async () => {
+    await pendingPromptRepo.savePendingPrompt({ type: "capture", reminderId: 1, createdAt: Date.now() });
+    const r = Reminder.reconstitute({ id: 1, snapshot: makeSnapshot(), state: "awaiting_time" });
+    repo.reminders.set(1, r);
+
+    const ctx = makeTextCtx(OWNER_ID, "/frobnicate");
+    await router.handleUpdate(ctx as any);
+
+    // Treated as the (unparseable) time answer — the pending prompt is
+    // re-saved for retry, and no NEW reminder was captured from it.
+    expect(repo.reminders.size).toBe(1);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const pendingAfter = await pendingPromptRepo.findPendingPrompt();
+    expect(pendingAfter).not.toBeNull();
+  });
+});

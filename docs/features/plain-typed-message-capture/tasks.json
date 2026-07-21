@@ -1,0 +1,41 @@
+{
+  "slug": "plain-typed-message-capture",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Add plain-text capture handler in capture-conversation.ts",
+      "layer": "ports",
+      "deps": [],
+      "acs": ["AC-01", "AC-01b", "AC-03"],
+      "dod": "Unit tests cover AC-01 (typed capture shows quick-pick), AC-01b (independent concurrent captures), and an integration test confirms AC-03 (post-capture scheduling unchanged).",
+      "files_hint": ["src/ports/conversations/capture-conversation.ts", "src/ports/__tests__/capture-conversation.test.ts"]
+    },
+    {
+      "id": "T2",
+      "title": "Wire router precedence branch for plain-text dispatch",
+      "layer": "ports",
+      "deps": ["T1"],
+      "acs": ["AC-02", "AC-04", "AC-04b", "AC-05", "AC-07"],
+      "dod": "Unit tests cover AC-02 (non-Owner regression), AC-04 (command-shaped exclusion), AC-04b (pending answer still wins over command-shaped text), AC-05 (empty/whitespace exclusion), AC-07 (pending answer wins over ordinary text).",
+      "files_hint": ["src/ports/router.ts", "src/ports/__tests__/router-auth.test.ts"]
+    },
+    {
+      "id": "T3",
+      "title": "Lock typed-origin source-lookup fallback with a regression test",
+      "layer": "tests",
+      "deps": [],
+      "acs": ["AC-06"],
+      "dod": "New test proves a typed-origin reminder's \"🔗 Джерело\" tap returns the stored text, never a link, against the unmodified existing fallback branch.",
+      "files_hint": ["src/ports/__tests__/source-handler.test.ts"]
+    },
+    {
+      "id": "T4",
+      "title": "Run full regression suite and verify manual latency budget",
+      "layer": "tests",
+      "deps": ["T1", "T2", "T3"],
+      "acs": [],
+      "dod": "npm test green including all pre-existing forwarded-capture tests (QG-3); manual timing confirms the \"When to remind?\" reply appears within 1000ms of a typed message (QG-2).",
+      "files_hint": []
+    }
+  ]
+}
